@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "mi-segunda-app",
+    "slug": "mi-segunda-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "misegundaapp",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "package": "com.erosjoaquin.misegundaapp",
+      "permissions": ["android.permission.INTERNET"]
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "1f80a331-caff-4756-b11b-1c97ab99eb51"
+      }
+    }
+  }
+}
