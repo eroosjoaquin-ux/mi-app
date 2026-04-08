@@ -1,20 +1,20 @@
 import { useRouter } from 'expo-router';
 import {
-    Camera as CameraIcon,
-    CheckCircle2,
-    Circle,
-    ShieldAlert,
-    UserCheck
+  Camera as CameraIcon,
+  CheckCircle2,
+  Circle,
+  ShieldAlert,
+  UserCheck
 } from 'lucide-react-native';
 import { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 // CORRECCIÓN: Ruta actualizada a tu carpeta de servicios

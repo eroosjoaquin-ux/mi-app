@@ -1,7 +1,6 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-// Importamos la configuración de Supabase
 import { supabase } from '../services/supabaseConfig';
 
 export default function RootLayout() {
@@ -18,10 +17,9 @@ export default function RootLayout() {
       setSession(session);
       
       if (session?.user) {
-        // 2. SI HAY USUARIO, BUSCAMOS EN LA TABLA SI ESTÁ VERIFICADO
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('Usuarios')
-          .select('verificado') // Asegurate que tu columna se llame así en Supabase
+          .select('verificado')
           .eq('id', session.user.id)
           .single();
 
@@ -45,16 +43,14 @@ export default function RootLayout() {
 
     // LÓGICA DE NAVEGACIÓN PROTEGIDA
     if (!session && inTabsGroup) {
-      // Si no hay sesión y quiere entrar a la app -> Al Login
       router.replace('/LoginScreen');
     } 
     else if (session && !isVerificado && inTabsGroup) {
-      // Si hay sesión pero NO está verificado -> A la Selfie
       router.replace('/registro_biometrico');
     } 
     else if (session && isVerificado && isLoginPage) {
-      // Si ya está todo OK y está en el login -> Al Home
-      router.replace('/(tabs)/home');
+      // CORRECCIÓN AQUÍ: Mandamos a /social que es el archivo que existe
+      router.replace('/(tabs)/social'); 
     }
   }, [session, isVerificado, segments, loading]);
 
@@ -68,20 +64,15 @@ export default function RootLayout() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      {/* Pantallas principales */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      
-      {/* Pantalla de Login y Registro */}
       <Stack.Screen name="LoginScreen" options={{ title: 'Ingreso' }} />
       <Stack.Screen name="RegistroScreen" options={{ title: 'Crear Cuenta', headerShown: true }} />
-
-      {/* Pantalla Biométrica (Selfie) */}
       <Stack.Screen 
         name="registro_biometrico" 
         options={{ 
           headerShown: true, 
           title: 'Verificación de Identidad',
-          headerLeft: () => null // Bloqueamos el "volver atrás"
+          headerLeft: () => null 
         }} 
       />
     </Stack>

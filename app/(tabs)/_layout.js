@@ -1,12 +1,12 @@
 import { Tabs } from 'expo-router';
-import { Briefcase, MessageSquare, User, Wallet } from 'lucide-react-native';
+import { Briefcase, Globe, MessageSquare, User, Wallet } from 'lucide-react-native';
 
 export default function TabsLayout() {
   return (
     <Tabs screenOptions={{ 
       tabBarActiveTintColor: '#1976D2',
       tabBarInactiveTintColor: '#65676B',
-      headerShown: false, // Lo ponemos en false porque ya creamos headers personalizados en cada pantalla
+      headerShown: false, 
       tabBarStyle: { 
         height: 70, 
         paddingBottom: 12,
@@ -20,7 +20,16 @@ export default function TabsLayout() {
         fontWeight: '600'
       }
     }}>
-      {/* 1. PERFIL: Tu carta de presentación */}
+      {/* 1. SOCIAL: El muro con el diseño nuevo */}
+      <Tabs.Screen 
+        name="social" 
+        options={{ 
+          title: 'Comunidad',
+          tabBarIcon: ({ color }) => <Globe size={24} color={color} /> 
+        }} 
+      />
+
+      {/* 2. PERFIL */}
       <Tabs.Screen 
         name="perfil" 
         options={{ 
@@ -29,7 +38,7 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 2. MIS TRABAJOS: Gestión y Agenda */}
+      {/* 3. MIS TRABAJOS */}
       <Tabs.Screen 
         name="mis_trabajos" 
         options={{ 
@@ -38,7 +47,7 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 3. CHATS: Comunicación y Presupuestos */}
+      {/* 4. CHATS */}
       <Tabs.Screen 
         name="chat" 
         options={{ 
@@ -47,7 +56,7 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 4. WALLET: Cobros y Saldo */}
+      {/* 5. WALLET */}
       <Tabs.Screen 
         name="wallet" 
         options={{ 
