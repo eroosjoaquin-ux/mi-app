@@ -15,7 +15,6 @@ import {
   Image,
   Modal,
   Platform,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -25,6 +24,8 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+// FORMA CORRECTA: Importamos SafeAreaView desde el context
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
@@ -43,39 +44,40 @@ const COLORS = {
   yellow: '#FFC107'
 };
 
-const CustomModal = ({ visible, onClose, title, content, hasSearch }) => (
-  <Modal visible={visible} animationType="slide" transparent={true}>
-    <TouchableWithoutFeedback onPress={onClose}>
-      <View style={styles.modalOverlay}>
-        <TouchableWithoutFeedback>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{title}</Text>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <X size={24} color={COLORS.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            {hasSearch && (
-              <View style={styles.searchBarContainer}>
-                <Search size={18} color={COLORS.textSecondary} style={styles.searchIconInput} />
-                <TextInput 
-                  placeholder="Buscar..." 
-                  style={styles.searchInput}
-                  placeholderTextColor={COLORS.textSecondary}
-                />
+const CustomModal = ({ visible, onClose, title, content, hasSearch }) => {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} animationType="slide" transparent={true}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback>
+            <View style={[styles.modalSheet, { paddingTop: insets.top > 0 ? insets.top : 20 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{title}</Text>
+                <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                  <X size={24} color={COLORS.textPrimary} />
+                </TouchableOpacity>
               </View>
-            )}
-
-            <View style={styles.modalContent}>
-              <Text style={styles.modalBodyText}>{content}</Text>
+              {hasSearch && (
+                <View style={styles.searchBarContainer}>
+                  <Search size={18} color={COLORS.textSecondary} style={styles.searchIconInput} />
+                  <TextInput 
+                    placeholder="Buscar..." 
+                    style={styles.searchInput}
+                    placeholderTextColor={COLORS.textSecondary}
+                  />
+                </View>
+              )}
+              <View style={styles.modalContent}>
+                <Text style={styles.modalBodyText}>{content}</Text>
+              </View>
             </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </View>
-    </TouchableWithoutFeedback>
-  </Modal>
-);
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
 
 const BarraReputacion = ({ puntos }) => {
   const colorBarra = puntos > 75 ? COLORS.green : puntos > 40 ? COLORS.yellow : COLORS.red;
@@ -93,7 +95,6 @@ export default function HomeScreen({ onLogout }) {
   const router = useRouter();
   const [seccionActual, setSeccionActual] = useState('trabajos');
   const [showSearchMenu, setShowSearchMenu] = useState(false);
-  
   const [modalNotif, setModalNotif] = useState(false);
   const [modalBusqueda, setModalBusqueda] = useState({ visible: false, title: '', content: '' });
 
@@ -131,23 +132,11 @@ export default function HomeScreen({ onLogout }) {
   const postsFiltrados = todosLosPosts.filter(post => post.tipo === seccionActual);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" />
 
-      <CustomModal 
-        visible={modalNotif} 
-        onClose={() => setModalNotif(false)} 
-        title="Notificaciones" 
-        content="No hay notificaciones" 
-        hasSearch={false}
-      />
-      <CustomModal 
-        visible={modalBusqueda.visible} 
-        onClose={() => setModalBusqueda({ ...modalBusqueda, visible: false })} 
-        title={modalBusqueda.title} 
-        content={modalBusqueda.content} 
-        hasSearch={true}
-      />
+      <CustomModal visible={modalNotif} onClose={() => setModalNotif(false)} title="Notificaciones" content="No hay notificaciones" hasSearch={false} />
+      <CustomModal visible={modalBusqueda.visible} onClose={() => setModalBusqueda({ ...modalBusqueda, visible: false })} title={modalBusqueda.title} content={modalBusqueda.content} hasSearch={true} />
 
       {showSearchMenu && (
         <TouchableWithoutFeedback onPress={() => setShowSearchMenu(false)}>
@@ -159,35 +148,26 @@ export default function HomeScreen({ onLogout }) {
         <View style={styles.headerContent}>
           <Text style={styles.logoText}>Brexel</Text>
           <View style={styles.headerRightIcons}>
-            <View>
-              <TouchableOpacity style={styles.headerCircleBtn} onPress={() => setShowSearchMenu(!showSearchMenu)}>
-                <Search size={20} color={COLORS.textPrimary} />
-              </TouchableOpacity>
-
-              {showSearchMenu && (
-                <View style={styles.searchDropdown}>
-                  <TouchableOpacity style={styles.searchItem} onPress={() => {
-                    setShowSearchMenu(false);
-                    setModalBusqueda({ visible: true, title: 'Ofertas de Trabajo', content: 'Todas las ofertas disponibles para vos' });
-                  }}>
-                    <Text style={styles.searchText}>¿Buscas ofertas de trabajo?</Text>
-                  </TouchableOpacity>
-                  <View style={styles.searchDivider} />
-                  <TouchableOpacity style={styles.searchItem} onPress={() => {
-                    setShowSearchMenu(false);
-                    setModalBusqueda({ visible: true, title: 'Solicitar Trabajo', content: 'Buscas quien te realize un trabajo' });
-                  }}>
-                    <Text style={styles.searchText}>¿Buscas quien te realice un trabajo?</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-
+            <TouchableOpacity style={styles.headerCircleBtn} onPress={() => setShowSearchMenu(!showSearchMenu)}>
+              <Search size={20} color={COLORS.textPrimary} />
+            </TouchableOpacity>
+            {showSearchMenu && (
+              <View style={styles.searchDropdown}>
+                <TouchableOpacity style={styles.searchItem} onPress={() => { setShowSearchMenu(false); setModalBusqueda({ visible: true, title: 'Ofertas de Trabajo', content: 'Todas las ofertas disponibles para vos' }); }}>
+                  <Text style={styles.searchText}>¿Buscas ofertas de trabajo?</Text>
+                </TouchableOpacity>
+                <View style={styles.searchDivider} />
+                <TouchableOpacity style={styles.searchItem} onPress={() => { setShowSearchMenu(false); setModalBusqueda({ visible: true, title: 'Solicitar Trabajo', content: 'Buscas quien te realice un trabajo' }); }}>
+                  <Text style={styles.searchText}>¿Buscas quien te realice un trabajo?</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <TouchableOpacity style={styles.headerCircleBtn} onPress={() => setModalNotif(true)}>
               <View style={styles.badge}><Text style={styles.badgeText}>1</Text></View>
               <Bell size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
-
+            
+            {/* MODIFICADO: Ruta simplificada para Perfil */}
             <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/perfil')}>
               <UserCircle2 size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
@@ -195,28 +175,29 @@ export default function HomeScreen({ onLogout }) {
         </View>
       </View>
 
-      <View style={styles.iconNavBar}>
+      <View style={[styles.iconNavBar, { marginTop: 30 }]}>
         <TouchableOpacity style={[styles.navIconContainer, seccionActual === 'trabajos' && styles.navIconActive]} onPress={() => setSeccionActual('trabajos')}>
-           <View style={{flexDirection: 'row', alignItems: 'center'}}>
-              <Wrench size={18} color={seccionActual === 'trabajos' ? COLORS.blue : COLORS.textSecondary} style={{transform: [{rotate: '-15deg'}]}} />
-              <Hammer size={18} color={seccionActual === 'trabajos' ? COLORS.blue : COLORS.textSecondary} style={{marginLeft: -5, transform: [{rotate: '15deg'}]}} />
-           </View>
-           <Text style={[styles.navIconLabel, { color: seccionActual === 'trabajos' ? COLORS.blue : COLORS.textSecondary }]}>Oferta</Text>
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+               <Wrench size={18} color={seccionActual === 'trabajos' ? COLORS.blue : COLORS.textSecondary} style={{transform: [{rotate: '-15deg'}]}} />
+               <Hammer size={18} color={seccionActual === 'trabajos' ? COLORS.blue : COLORS.textSecondary} style={{marginLeft: -5, transform: [{rotate: '15deg'}]}} />
+            </View>
+            <Text style={[styles.navIconLabel, { color: seccionActual === 'trabajos' ? COLORS.blue : COLORS.textSecondary }]}>Oferta</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.navIconContainer, seccionActual === 'empleados' && styles.navIconActive]} onPress={() => setSeccionActual('empleados')}>
-           <Users size={24} color={seccionActual === 'empleados' ? COLORS.blue : COLORS.textSecondary} />
-           <Text style={[styles.navIconLabel, { color: seccionActual === 'empleados' ? COLORS.blue : COLORS.textSecondary }]}>Demanda</Text>
+            <Users size={24} color={seccionActual === 'empleados' ? COLORS.blue : COLORS.textSecondary} />
+            <Text style={[styles.navIconLabel, { color: seccionActual === 'empleados' ? COLORS.blue : COLORS.textSecondary }]}>Demanda</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('/chats')}>
-           <MessageSquare size={24} color={COLORS.textSecondary} />
-           <Text style={styles.navIconLabel}>Chat</Text>
+        {/* MODIFICADO: Ruta relativa para Chat */}
+        <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('./chat/chats')}>
+            <MessageSquare size={24} color={COLORS.textSecondary} />
+            <Text style={styles.navIconLabel}>Chat</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('/nuevo_post')}>
-           <PlusCircle size={24} color={COLORS.textSecondary} />
-           <Text style={styles.navIconLabel}>Publicar</Text>
+            <PlusCircle size={24} color={COLORS.textSecondary} />
+            <Text style={styles.navIconLabel}>Publicar</Text>
         </TouchableOpacity>
       </View>
 
@@ -263,7 +244,8 @@ export default function HomeScreen({ onLogout }) {
                 <Text style={styles.actionButtonText}>Comentar</Text>
               </TouchableOpacity>
               
-              <TouchableOpacity style={[styles.actionButton, styles.contactBtnActive]} onPress={() => router.push('/chats')}>
+              {/* MODIFICADO: Ruta relativa para botón Contactar */}
+              <TouchableOpacity style={[styles.actionButton, styles.contactBtnActive]} onPress={() => router.push('./chat/chats')}>
                 <MessageSquare size={20} color="white" />
                 <Text style={{color: 'white', fontWeight: 'bold'}}>Contactar</Text>
               </TouchableOpacity>
@@ -314,7 +296,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.5)', 
     paddingVertical: 12,
     marginHorizontal: 15, 
-    marginTop: 15, 
     borderRadius: 25,
     justifyContent: 'space-around', 
   },
@@ -329,7 +310,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
     paddingHorizontal: 20,
-    paddingTop: 15,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -350,7 +330,7 @@ const styles = StyleSheet.create({
   },
   searchIconInput: { marginRight: 10 },
   searchInput: { flex: 1, fontSize: 16, color: COLORS.textPrimary },
-  modalContent: { flex: 1, alignItems: 'center', paddingTop: 40 },
+  modalContent: { flex: 1, alignItems: 'center', paddingTop: 20 },
   modalBodyText: { fontSize: 16, color: COLORS.textSecondary, textAlign: 'center' },
   navIconContainer: { alignItems: 'center', justifyContent: 'center', width: width / 4.5, paddingVertical: 5, borderRadius: 15 },
   navIconActive: { backgroundColor: 'rgba(25, 118, 210, 0.1)' },
@@ -368,4 +348,13 @@ const styles = StyleSheet.create({
   contactBtnActive: { backgroundColor: COLORS.blue, flex: 1 },
   badge: { position: 'absolute', top: -4, right: -4, backgroundColor: '#D32F2F', width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
   badgeText: { color: 'white', fontSize: 9, fontWeight: 'bold' },
+  reputacionContenedor: { position: 'absolute', bottom: -5, left: 10, width: 30, alignItems: 'center' },
+  barraFondo: { width: 30, height: 4, backgroundColor: '#E4E6EB', borderRadius: 2, overflow: 'hidden' },
+  barraProgreso: { height: '100%' },
+  reputacionTexto: { fontSize: 7, fontWeight: 'bold', marginTop: 1 },
+  interactionBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  statGroup: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  likeIconCircle: { width: 16, height: 16, borderRadius: 8, backgroundColor: COLORS.blue, alignItems: 'center', justifyContent: 'center' },
+  statText: { fontSize: 13, color: COLORS.textSecondary },
+  divider: { height: 1, backgroundColor: COLORS.border, marginBottom: 12 },
 });

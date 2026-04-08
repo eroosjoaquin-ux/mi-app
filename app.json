@@ -16,10 +16,21 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "package": "com.erosjoaquin.misegundaapp",
-      "permissions": ["android.permission.INTERNET"]
+      "permissions": [
+        "android.permission.INTERNET"
+      ]
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.erosjoaquin.misegundaapp",
+          "enableGooglePay": true
+        }
+      ],
+      "expo-camera",
+      "expo-location"
     ],
     "extra": {
       "router": {

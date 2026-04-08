@@ -14,16 +14,22 @@ export default function RootLayout() {
   useEffect(() => {
     // 1. ESCUCHAR ESTADO DE LA SESIÓN
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("🕵️ LAYOUT: Evento de Auth:", event);
       setSession(session);
       
       if (session?.user) {
+        // CORRECCIÓN: Usamos 'esperando_verificacion' que es la que existe en tu tabla
         const { data } = await supabase
           .from('Usuarios')
-          .select('verificado')
+          .select('esperando_verificacion') 
           .eq('id', session.user.id)
           .single();
 
-        if (data) setIsVerificado(data.verificado);
+        if (data) {
+          console.log("🕵️ LAYOUT: Valor en DB:", data.esperando_verificacion);
+          // Si es TRUE, el usuario ya pasó por la cámara
+          setIsVerificado(data.esperando_verificacion);
+        }
       } else {
         setIsVerificado(false);
       }
@@ -40,16 +46,18 @@ export default function RootLayout() {
 
     const inTabsGroup = segments[0] === '(tabs)';
     const isLoginPage = segments[0] === 'LoginScreen';
+    const isBiometricPage = segments[0] === 'registro_biometrico';
 
-    // LÓGICA DE NAVEGACIÓN PROTEGIDA
-    if (!session && inTabsGroup) {
+    // --- LÓGICA DE PROTECCIÓN TOTAL ---
+    if (!session && !isLoginPage && segments[0] !== 'RegistroScreen') {
       router.replace('/LoginScreen');
     } 
     else if (session && !isVerificado && inTabsGroup) {
+      console.log("🕵️ LAYOUT: Bloqueado. Redirigiendo a biometría.");
       router.replace('/registro_biometrico');
     } 
-    else if (session && isVerificado && isLoginPage) {
-      // CORRECCIÓN AQUÍ: Mandamos a /social que es el archivo que existe
+    else if (session && isVerificado && (isLoginPage || isBiometricPage)) {
+      console.log("🕵️ LAYOUT: Todo OK. Liberando a la Home.");
       router.replace('/(tabs)/social'); 
     }
   }, [session, isVerificado, segments, loading]);
@@ -65,6 +73,7 @@ export default function RootLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="index" options={{ headerShown: false }} /> 
       <Stack.Screen name="LoginScreen" options={{ title: 'Ingreso' }} />
       <Stack.Screen name="RegistroScreen" options={{ title: 'Crear Cuenta', headerShown: true }} />
       <Stack.Screen 

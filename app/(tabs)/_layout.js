@@ -20,7 +20,7 @@ export default function TabsLayout() {
         fontWeight: '600'
       }
     }}>
-      {/* 1. SOCIAL: El muro con el diseño nuevo */}
+      {/* 1. SOCIAL */}
       <Tabs.Screen 
         name="social" 
         options={{ 
@@ -47,9 +47,9 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 4. CHATS */}
+      {/* 4. CHATS - Corregido segun tu estructura de archivos app/chat/chats */}
       <Tabs.Screen 
-        name="chat" 
+        name="chat/chats" 
         options={{ 
           title: 'Mensajes',
           tabBarIcon: ({ color }) => <MessageSquare size={24} color={color} /> 
