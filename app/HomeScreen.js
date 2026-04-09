@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   Bell, Hammer,
   Heart,
@@ -9,8 +9,9 @@ import {
   Wrench,
   X
 } from 'lucide-react-native';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Dimensions,
   Image,
   Modal,
@@ -24,8 +25,10 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
-// FORMA CORRECTA: Importamos SafeAreaView desde el context
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// IMPORTACIÓN DE SUPABASE
+import { supabase } from '../services/supabaseConfig';
 
 const { width, height } = Dimensions.get('window');
 
@@ -91,45 +94,46 @@ const BarraReputacion = ({ puntos }) => {
   );
 };
 
-export default function HomeScreen({ onLogout }) {
+export default function HomeScreen() {
   const router = useRouter();
-  const [seccionActual, setSeccionActual] = useState('trabajos');
+  const [seccionActual, setSeccionActual] = useState('trabajos'); // 'trabajos' es Oferta, 'empleados' es Demanda
   const [showSearchMenu, setShowSearchMenu] = useState(false);
   const [modalNotif, setModalNotif] = useState(false);
   const [modalBusqueda, setModalBusqueda] = useState({ visible: false, title: '', content: '' });
+  
+  // ESTADOS PARA RASTREO DE DATOS
+  const [posts, setPosts] = useState([]);
+  const [cargando, setCargando] = useState(true);
 
-  const todosLosPosts = [
-    {
-      id: 1,
-      userName: 'Eros Joaquín',
-      userEmpresa: 'Brexel Admin',
-      userPhoto: 'https://randomuser.me/api/portraits/men/32.jpg',
-      verificado: true,
-      reputacion: 98,
-      time: '10 min',
-      postText: '¡Estructura de reputación bilateral activada! Ahora podés ver quién es confiable.',
-      postPhoto: 'https://images.unsplash.com/photo-1541976844346-f18aeac57b06?w=600', 
-      likes: 124,
-      comments: 8,
-      tipo: 'trabajos'
-    },
-    {
-      id: 2,
-      userName: 'Juan Perez',
-      userEmpresa: 'Particular',
-      userPhoto: 'https://randomuser.me/api/portraits/men/45.jpg',
-      verificado: false,
-      reputacion: 45,
-      time: '1 hora',
-      postText: 'Busco alguien para limpiar un terreno de 20x50 en Alejandro Korn.',
-      postPhoto: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=500',
-      likes: 12,
-      comments: 3,
-      tipo: 'empleados'
+  // FUNCIÓN DE RASTREO (FETCH)
+  const fetchPosts = async () => {
+    try {
+      setCargando(true);
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPosts(data || []);
+    } catch (error) {
+      console.error("Error rastreando posts:", error.message);
+    } finally {
+      setCargando(false);
     }
-  ];
+  };
 
-  const postsFiltrados = todosLosPosts.filter(post => post.tipo === seccionActual);
+  // RECARGA AUTOMÁTICA AL VOLVER A LA PANTALLA
+  useFocusEffect(
+    useCallback(() => {
+      fetchPosts();
+    }, [])
+  );
+
+  // FILTRADO DINÁMICO: 'oferta' va a 'trabajos', 'demanda' va a 'empleados'
+  const postsFiltrados = posts.filter(post => 
+    seccionActual === 'trabajos' ? post.tipo === 'oferta' : post.tipo === 'demanda'
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -167,7 +171,6 @@ export default function HomeScreen({ onLogout }) {
               <Bell size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
             
-            {/* MODIFICADO: Ruta simplificada para Perfil */}
             <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/perfil')}>
               <UserCircle2 size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
@@ -189,7 +192,6 @@ export default function HomeScreen({ onLogout }) {
             <Text style={[styles.navIconLabel, { color: seccionActual === 'empleados' ? COLORS.blue : COLORS.textSecondary }]}>Demanda</Text>
         </TouchableOpacity>
 
-        {/* MODIFICADO: Ruta relativa para Chat */}
         <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('./chat/chats')}>
             <MessageSquare size={24} color={COLORS.textSecondary} />
             <Text style={styles.navIconLabel}>Chat</Text>
@@ -208,32 +210,41 @@ export default function HomeScreen({ onLogout }) {
           </Text>
         </View>
 
-        {postsFiltrados.map((post) => (
-          <View key={post.id} style={styles.postCard}>
+        {cargando ? (
+            <ActivityIndicator size="large" color={COLORS.blue} style={{marginTop: 50}} />
+        ) : postsFiltrados.map((post) => (
+          <View key={post.id} style={[styles.postCard, post.es_urgente && {borderColor: COLORS.red, borderWidth: 1.5}]}>
             <View style={styles.postHeader}>
               <View style={styles.contenedorAvatar}>
                 <Image source={{ uri: post.userPhoto }} style={styles.userPhoto} />
-                <BarraReputacion puntos={post.reputacion} />
+                <BarraReputacion puntos={post.reputacion || 0} />
               </View>
               <View style={styles.postHeaderText}>
                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                  <Text style={styles.userName}>{post.userName}</Text>
+                  <Text style={styles.userName}>{post.userName || "Usuario"}</Text>
                   {post.verificado && <ShieldCheck size={16} color={COLORS.blue} style={{marginLeft: 4}} />}
+                  {post.es_urgente && <Text style={{color: COLORS.red, fontSize: 10, fontWeight: 'bold', marginLeft: 8}}>🚨 URGENTE</Text>}
                 </View>
-                <Text style={styles.userSubtext}>{post.userEmpresa} • {post.time}</Text>
+                <Text style={styles.userSubtext}>{post.rubro} • {post.time || 'Recién'}</Text>
               </View>
               <TouchableOpacity><MoreHorizontal size={20} color={COLORS.textSecondary} /></TouchableOpacity>
             </View>
 
-            <Text style={styles.postDescription}>{post.postText}</Text>
-            <Image source={{ uri: post.postPhoto }} style={styles.postImage} resizeMode="cover" />
+            <Text style={styles.postDescription}>
+                <Text style={{fontWeight: 'bold'}}>{post.titulo}{'\n'}</Text>
+                {post.descripcion}
+            </Text>
+            
+            {post.postPhoto && (
+                <Image source={{ uri: post.postPhoto }} style={styles.postImage} resizeMode="cover" />
+            )}
 
             <View style={styles.interactionBar}>
               <View style={styles.statGroup}>
                 <View style={styles.likeIconCircle}><Heart size={10} color="white" fill="white" /></View>
-                <Text style={styles.statText}>{post.likes}</Text>
+                <Text style={styles.statText}>{post.likes || 0}</Text>
               </View>
-              <Text style={styles.statText}>{post.comments} comentarios</Text>
+              <Text style={styles.statText}>{post.comments || 0} comentarios</Text>
             </View>
 
             <View style={styles.divider} />
@@ -244,7 +255,6 @@ export default function HomeScreen({ onLogout }) {
                 <Text style={styles.actionButtonText}>Comentar</Text>
               </TouchableOpacity>
               
-              {/* MODIFICADO: Ruta relativa para botón Contactar */}
               <TouchableOpacity style={[styles.actionButton, styles.contactBtnActive]} onPress={() => router.push('./chat/chats')}>
                 <MessageSquare size={20} color="white" />
                 <Text style={{color: 'white', fontWeight: 'bold'}}>Contactar</Text>
@@ -252,6 +262,9 @@ export default function HomeScreen({ onLogout }) {
             </View>
           </View>
         ))}
+        {!cargando && postsFiltrados.length === 0 && (
+            <Text style={{textAlign: 'center', color: COLORS.textSecondary, marginTop: 40}}>No hay anuncios en esta sección todavía.</Text>
+        )}
         <View style={{height: 100}} />
       </ScrollView>
     </SafeAreaView>
@@ -341,10 +354,12 @@ const styles = StyleSheet.create({
   userPhoto: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: COLORS.blueLight },
   postHeaderText: { flex: 1, paddingHorizontal: 10 },
   userName: { fontSize: 15, fontWeight: 'bold', color: COLORS.textPrimary },
-  postDescription: { fontSize: 14, color: COLORS.textPrimary, marginBottom: 10 },
+  userSubtext: { fontSize: 12, color: COLORS.textSecondary },
+  postDescription: { fontSize: 14, color: COLORS.textPrimary, marginBottom: 10, lineHeight: 18 },
   postImage: { width: '100%', height: 220, borderRadius: 20, marginBottom: 12 },
   actionButtonsRow: { flexDirection: 'row', gap: 8 },
   actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12, backgroundColor: '#F0F2F5', gap: 5 },
+  actionButtonText: { fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' },
   contactBtnActive: { backgroundColor: COLORS.blue, flex: 1 },
   badge: { position: 'absolute', top: -4, right: -4, backgroundColor: '#D32F2F', width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
   badgeText: { color: 'white', fontSize: 9, fontWeight: 'bold' },

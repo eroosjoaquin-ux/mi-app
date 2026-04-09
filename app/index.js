@@ -7,10 +7,11 @@ import LoginScreen from './LoginScreen';
 import RegistroScreen from './RegistroScreen';
 import RegistroBiometrico from './registro_biometrico';
 
-// VARIABLE GLOBAL: Mantiene el estado aunque navegues al chat
+// CORRECCIÓN: Nombre de archivo exacto
+import NuevoPostScreen from './nuevo_post';
+
 let yaValidadoCache = false;
 
-// Ocultamos el warning del SafeAreaView para limpiar la consola
 LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
 export default function MainApp() {
@@ -19,11 +20,13 @@ export default function MainApp() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [necesitaValidacion, setNecesitaValidacion] = useState(!yaValidadoCache);
   const [inicializado, setInicializado] = useState(false);
+  
+  // NUEVO ESTADO: Para controlar cuándo se ve la pantalla de publicar
+  const [mostrandoPublicar, setMostrandoPublicar] = useState(false);
 
   useEffect(() => {
     const checkUserStatus = async (currentSession) => {
       if (currentSession) {
-        // 1. Si el cache dice que ya entramos, no preguntamos más
         if (yaValidadoCache) {
           setNecesitaValidacion(false);
           setSession(currentSession);
@@ -39,13 +42,10 @@ export default function MainApp() {
             .eq('id', currentSession.user.id)
             .maybeSingle(); 
 
-          // LÓGICA CORREGIDA SEGÚN TUS LOGS:
-          // Si la DB devuelve TRUE, el usuario YA ESTÁ verificado.
           if (data && data.esperando_verificacion === true) {
             yaValidadoCache = true; 
             setNecesitaValidacion(false);
           } else {
-            // Si es false o null, necesita pasar por la cámara
             setNecesitaValidacion(true);
           }
         } catch (err) {
@@ -84,9 +84,22 @@ export default function MainApp() {
   return (
     <SafeAreaProvider>
       {session ? (
-        // Si necesitaValidacion es FALSE o yaValidadoCache es TRUE, vas al Home.
         (!necesitaValidacion || yaValidadoCache) ? (
-          <HomeScreen onLogout={() => supabase.auth.signOut()} />
+          // Lógica de pantallas principales
+          mostrandoPublicar ? (
+            <NuevoPostScreen 
+              onSuccess={() => {
+                // Al ejecutarse esto desde el OK de la alerta en nuevo_post.js
+                // el estado cambia y volvemos automáticamente al Home
+                setMostrandoPublicar(false);
+              }} 
+            />
+          ) : (
+            <HomeScreen 
+              onLogout={() => supabase.auth.signOut()} 
+              onIrAPublicar={() => setMostrandoPublicar(true)} 
+            />
+          )
         ) : (
           <RegistroBiometrico onComplete={() => {
             yaValidadoCache = true;

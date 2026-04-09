@@ -53,7 +53,7 @@ const RUBROS = [
     'Techista e Impermeabilización', 'Vidriería y Aberturas'
 ].sort();
 
-export default function NuevoPostScreen() {
+export default function nuevo_post({ onSuccess }) {
     const router = useRouter();
     
     const [tipo, setTipo] = useState('oferta'); 
@@ -100,7 +100,6 @@ export default function NuevoPostScreen() {
         setModalVisible(false);
     };
 
-    // FUNCIÓN DE PUBLICAR ACTUALIZADA
     const handlePublicar = async () => {
         if (!titulo || !rubro || !descripcion) {
             Alert.alert("Faltan datos", "Por favor completa el título, rubro y descripción.");
@@ -109,10 +108,17 @@ export default function NuevoPostScreen() {
 
         setCargando(true);
         try {
-            const { data, error } = await supabase
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+            
+            if (userError || !user) {
+                throw new Error("Debes estar iniciado sesión para publicar.");
+            }
+
+            const { error } = await supabase
                 .from('posts')
                 .insert([
                     {
+                        usuario_id : user.id,
                         tipo: tipo,
                         titulo: titulo,
                         rubro: rubro,
@@ -120,14 +126,38 @@ export default function NuevoPostScreen() {
                         presupuesto: presupuesto ? parseFloat(presupuesto) : 0,
                         es_urgente: esUrgente,
                         descripcion: descripcion,
-                        opciones: opciones, 
+                        opciones: opciones,
+                        userName: "Eros Joaquín", 
+                        userPhoto: 'https://randomuser.me/api/portraits/men/32.jpg',
+                        postPhoto: imagenes.length > 0 ? imagenes[0] : null,
+                        reputacion: 100,
+                        verificado: true,
+                        likes: 0,
+                        comments: 0
                     }
                 ]);
 
             if (error) throw error;
 
-            Alert.alert("¡Éxito!", "Tu anuncio ha sido publicado correctamente.");
-            router.back();
+            // CONFIGURACIÓN PARA REDIRECCIONAR AL TOCAR "OK"
+            Alert.alert(
+                "¡Éxito!", 
+                "Tu anuncio ha sido publicado correctamente.",
+                [
+                    { 
+                        text: "OK", 
+                        onPress: () => {
+                            if (onSuccess) {
+                                onSuccess(); // Ejecuta el cierre en index.js
+                            } else {
+                                router.replace('/'); // Backup por si falla la prop
+                            }
+                        } 
+                    }
+                ],
+                { cancelable: false }
+            );
+            
         } catch (error) {
             Alert.alert("Error", error.message);
         } finally {
@@ -177,7 +207,7 @@ export default function NuevoPostScreen() {
                 </Modal>
 
                 <View style={styles.header}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
+                    <TouchableOpacity onPress={() => onSuccess && onSuccess()} style={styles.closeBtn}>
                         <X size={22} color={COLORS.text} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Crear Anuncio Profesional</Text>
