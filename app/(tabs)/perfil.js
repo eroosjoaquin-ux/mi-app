@@ -1,236 +1,377 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import {
   Camera,
-  CheckCircle2,
   ChevronLeft,
-  Clock,
-  Edit3,
-  MapPin, Navigation,
+  Edit3, LogOut, MapPin,
   ShieldAlert,
-  ShieldCheck, Star
+  Star
 } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
 import {
-  Dimensions,
-  Image,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet, Text,
-  TouchableOpacity,
-  View
+  ActivityIndicator,
+  Alert, Dimensions, Image,
+  Modal,
+  ScrollView, StyleSheet, Text,
+  TextInput // Se agregaron Modal y TextInput
+  ,
+  TouchableOpacity, View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
-const NEUTRAL = {
-  white: '#FFFFFF',
-  dark: '#1A1A1A',
-  gray: '#666666',
-  lightGray: '#F5F7F9',
-  border: '#E1E4E8'
-};
+// Configuración de Supabase
+const supabaseUrl = 'https://kqittlmnkvdaaualuswr.supabase.co';
+const supabaseAnonKey = 'sb_publishable_2Z4BPTVd0qIu4npa-sNjWw_IJ5QqqD_';
 
-const BRAND = {
-  primary: '#1976D2', 
-  success: '#2E7D32', 
-  warning: '#ED6C02',
-  danger: '#D32F2F',
-  info: '#0288D1'
-};
+const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+});
+
+const NEUTRAL = { white: '#FFFFFF', dark: '#1A1A1A', gray: '#666666', lightGray: '#F5F7F9', border: '#E1E4E8' };
+const BRAND = { primary: '#1976D2', success: '#2E7D32', warning: '#ED6C02', danger: '#D32F2F' };
 
 export default function PerfilScreen() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [userData, setUserData] = useState(null);
+  const [fotoPerfil, setFotoPerfil] = useState('https://randomuser.me/api/portraits/men/32.jpg');
 
-  // --- CONFIGURACIÓN DE PRUEBA ---
-  // Cambiá 'verificado' a true para ver cómo queda el perfil aprobado
-  const perfil = {
-    nombre: 'Eros Joaquín Bravo',
+  // --- ESTADOS PARA EL MODAL ---
+  const [modalVisible, setModalVisible] = useState(false);
+  const [nuevoNombre, setNuevoNombre] = useState('');
+
+  const perfilInfo = {
     especialidad: 'Técnico en Mantenimiento Integrado',
-    bio: 'Comprometido con la calidad y la puntualidad. Especialista en soluciones técnicas para el hogar y comercio con amplia trayectoria en la zona.',
+    bio: 'Comprometido con la calidad y la puntualidad. Especialista en soluciones técnicas para el hogar y comercio.',
     reputacion: 98,
-    verificado: false, // ESTADO INICIAL
+    verificado: false,
     metricas: { trabajos: 142, rating: 4.9, antiguedad: '2 años' },
     zonaNombre: 'San Vicente',
-    radioCobertura: '15 km'
+  };
+
+  useEffect(() => {
+    cargarDatosUsuario();
+  }, []);
+
+  const cargarDatosUsuario = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session?.user) {
+      const nombreRespaldo = session.user.user_metadata?.full_name || session.user.email.split('@')[0];
+      setUserData({ nombre: nombreRespaldo });
+      setNuevoNombre(nombreRespaldo);
+
+      try {
+        const { data, error } = await supabase
+          .from('Usuarios')
+          .select('nombre, avatar_url')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (data) {
+          if (data.nombre) {
+            setUserData(data);
+            setNuevoNombre(data.nombre);
+          }
+          if (data.avatar_url) setFotoPerfil(data.avatar_url);
+        }
+      } catch (e) {
+        console.error("Error cargando perfil desde tabla Usuarios:", e);
+      }
+    }
+  };
+
+  // --- FUNCIÓN PARA ACTUALIZAR NOMBRE DESDE EL MODAL ---
+  const actualizarNombre = async () => {
+    if (!nuevoNombre || nuevoNombre.trim().length < 3) {
+      return Alert.alert("Error", "El nombre debe tener al menos 3 caracteres.");
+    }
+
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error } = await supabase
+        .from('Usuarios')
+        .update({ nombre: nuevoNombre.trim() })
+        .eq('id', session.user.id);
+
+      if (error) throw error;
+
+      setUserData(prev => ({ ...prev, nombre: nuevoNombre.trim() }));
+      setModalVisible(false);
+      Alert.alert("¡Éxito!", "Nombre actualizado correctamente.");
+    } catch (error) {
+      Alert.alert("Error", "No se pudo actualizar el nombre.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      setUserData(null);
+      router.replace('/'); 
+    } catch (error) {
+      Alert.alert("Error", "No se pudo cerrar la sesión correctamente.");
+    }
+  };
+
+  const cambiarFotoPerfil = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return Alert.alert("Permisos", "Necesitamos acceso a tus fotos.");
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setLoading(true);
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session.user.id;
+        const fileName = `${userId}/avatar_${Date.now()}.jpg`;
+
+        const formData = new FormData();
+        formData.append('file', {
+          uri: uri,
+          name: fileName,
+          type: 'image/jpeg',
+        });
+
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, formData, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+        const { error: updateError } = await supabase
+          .from('Usuarios')
+          .update({ avatar_url: publicUrl })
+          .eq('id', userId);
+
+        if (updateError) throw updateError;
+
+        setFotoPerfil(publicUrl);
+        Alert.alert("¡Éxito!", "Tu foto de perfil ha sido actualizada.");
+      } catch (error) {
+        console.error("Error detallado:", error);
+        Alert.alert("Error", "No se pudo subir la imagen: " + error.message);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        
-        {/* HEADER CON OVERLAY */}
-        <View style={styles.coverContainer}>
+    <View style={styles.container}>
+      
+      {/* --- MODAL DE EDICIÓN --- */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Editar Nombre</Text>
+            <TextInput
+              style={styles.input}
+              value={nuevoNombre}
+              onChangeText={setNuevoNombre}
+              placeholder="Nombre de usuario o empresa"
+              placeholderTextColor={NEUTRAL.gray}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.cancelBtn} 
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.saveBtn} 
+                onPress={actualizarNombre}
+                disabled={loading}
+              >
+                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>Guardar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+        <View style={styles.header}>
           <Image 
             source={{ uri: 'https://images.unsplash.com/photo-1581094288338-2314dddb7e8b?w=800' }} 
             style={styles.coverImage} 
           />
           <View style={styles.overlay} />
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <ChevronLeft size={24} color="#FFF" />
-          </TouchableOpacity>
+          <SafeAreaView style={styles.navBar}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/')}>
+              <ChevronLeft size={24} color="#FFF" />
+            </TouchableOpacity>
+          </SafeAreaView>
         </View>
 
-        {/* TARJETA DE PERFIL PRINCIPAL */}
         <View style={styles.profileCard}>
           <View style={styles.avatarWrapper}>
-            <Image 
-              source={{ uri: 'https://randomuser.me/api/portraits/men/32.jpg' }} 
-              style={styles.mainAvatar} 
-            />
-            <TouchableOpacity style={styles.cameraIcon}>
-              <Camera size={16} color="#FFF" />
+            <Image source={{ uri: fotoPerfil }} style={styles.mainAvatar} />
+            <TouchableOpacity style={styles.cameraIcon} onPress={cambiarFotoPerfil} disabled={loading}>
+              {loading ? <ActivityIndicator size="small" color="#FFF" /> : <Camera size={18} color="#FFF" />}
             </TouchableOpacity>
           </View>
 
           <View style={styles.nameSection}>
-            <View style={styles.nameRow}>
-              <Text style={styles.userName}>{perfil.nombre}</Text>
-              {perfil.verificado ? (
-                <ShieldCheck size={22} color={BRAND.primary} fill={BRAND.primary + '20'} />
-              ) : (
-                <Clock size={22} color={BRAND.warning} />
-              )}
-            </View>
-            <Text style={styles.userSpec}>{perfil.especialidad}</Text>
-            
+            <Text style={styles.userName}>{userData?.nombre || "Cargando..."}</Text>
+            <Text style={styles.userSpec}>{perfilInfo.especialidad}</Text>
             <View style={styles.locationBadge}>
               <MapPin size={14} color={BRAND.primary} />
-              <Text style={styles.locationBadgeText}>{perfil.zonaNombre}</Text>
+              <Text style={styles.locationBadgeText}>{perfilInfo.zonaNombre}</Text>
             </View>
           </View>
 
-          {/* MÓDULO DE BLOQUEO / AUDITORÍA (Solo se ve si no está verificado) */}
-          {!perfil.verificado && (
-            <View style={styles.warningCard}>
-              <View style={styles.warningHeader}>
-                <ShieldAlert size={20} color={BRAND.danger} />
-                <Text style={styles.warningTitle}>Identidad en Proceso</Text>
-              </View>
-              <Text style={styles.warningText}>
-                Tu selfie y DNI están siendo auditados por seguridad. Recibirás una notificación cuando puedas aceptar trabajos.
-              </Text>
+          <View style={styles.trustSection}>
+            <View style={styles.trustHeader}>
+              <Text style={styles.trustLabel}>Indicador de Confianza</Text>
+              <Text style={styles.trustValue}>{perfilInfo.reputacion}%</Text>
             </View>
-          )}
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${perfilInfo.reputacion}%` }]} />
+            </View>
+          </View>
 
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{perfil.metricas.trabajos}</Text>
+              <Text style={styles.statValue}>{perfilInfo.metricas.trabajos}</Text>
               <Text style={styles.statLabel}>Servicios</Text>
             </View>
-            <View style={[styles.statBox, styles.statDivider]}>
-              <Text style={styles.statValue}>{perfil.metricas.rating}</Text>
+            <View style={styles.divider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{perfilInfo.metricas.rating}</Text>
               <View style={styles.ratingRow}>
                 <Star size={10} color={BRAND.warning} fill={BRAND.warning} />
                 <Text style={styles.statLabel}>Rating</Text>
               </View>
             </View>
+            <View style={styles.divider} />
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{perfil.metricas.antiguedad}</Text>
+              <Text style={styles.statValue}>{perfilInfo.metricas.antiguedad}</Text>
               <Text style={styles.statLabel}>En Brexel</Text>
             </View>
           </View>
         </View>
 
+        {!perfilInfo.verificado && (
+          <View style={styles.warningContainer}>
+            <View style={styles.warningCard}>
+              <ShieldAlert size={20} color={BRAND.danger} />
+              <View style={styles.warningInfo}>
+                <Text style={styles.warningTitle}>Identidad en Proceso</Text>
+                <Text style={styles.warningText}>Tu selfie y DNI están siendo auditados.</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         <View style={styles.contentSection}>
-          {/* INDICADOR DE CONFIANZA */}
-          <Text style={styles.sectionTitle}>Indicador de Confianza</Text>
-          <View style={styles.trustCard}>
-            <View style={styles.trustHeader}>
-              <Text style={styles.trustText}>Cumplimiento: <Text style={{fontWeight:'800', color: BRAND.success}}>{perfil.reputacion}%</Text></Text>
-              <CheckCircle2 size={18} color={BRAND.success} />
-            </View>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${perfil.reputacion}%` }]} />
-            </View>
-            <Text style={styles.trustSub}>Este puntaje se basa en la validación de tus clientes reales.</Text>
-          </View>
-
-          {/* ZONA DE COBERTURA */}
-          <Text style={[styles.sectionTitle, {marginTop: 25}]}>Zona de Trabajo</Text>
-          <View style={styles.mapCard}>
-            <View style={styles.mapIconCircle}>
-              <Navigation size={22} color={BRAND.primary} />
-            </View>
-            <View style={{flex: 1}}>
-              <Text style={styles.mapTitle}>Área de Servicio</Text>
-              <Text style={styles.mapSub}>{perfil.zonaNombre} y alrededores ({perfil.radioCobertura})</Text>
-            </View>
-          </View>
-
-          {/* BIO */}
-          <Text style={[styles.sectionTitle, {marginTop: 25}]}>Sobre mí</Text>
+          <Text style={styles.sectionTitle}>Sobre mí</Text>
           <View style={styles.bioCard}>
-            <Text style={styles.bioText}>{perfil.bio}</Text>
+            <Text style={styles.bioText}>{perfilInfo.bio}</Text>
           </View>
-
-          {/* BOTÓN EDITAR */}
-          <TouchableOpacity style={styles.editBtn}>
+          
+          <TouchableOpacity 
+            style={styles.editBtn} 
+            onPress={() => setModalVisible(true)} // Abre el Modal
+            disabled={loading}
+          >
             <Edit3 size={18} color={BRAND.primary} />
-            <Text style={styles.editBtnText}>Editar Información Profesional</Text>
+            <Text style={styles.editBtnText}>Editar Perfil</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+            <LogOut size={16} color={NEUTRAL.gray} />
+            <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
           </TouchableOpacity>
         </View>
-
-        <View style={{height: 60}} />
+        
+        <View style={{ height: 40 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: NEUTRAL.lightGray },
-  coverContainer: { height: 180, width: '100%' },
+  header: { height: height * 0.22, width: '100%' },
   coverImage: { width: '100%', height: '100%' },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
-  backBtn: { position: 'absolute', top: 50, left: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center' },
-  
-  profileCard: { 
-    backgroundColor: NEUTRAL.white, marginHorizontal: 20, marginTop: -60, borderRadius: 24, padding: 20,
-    alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 
-  },
-  avatarWrapper: { marginTop: -70, marginBottom: 15 },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
+  navBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 20 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  profileCard: { backgroundColor: NEUTRAL.white, marginHorizontal: 16, marginTop: -(height * 0.07), borderRadius: 28, padding: 20, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  avatarWrapper: { marginTop: -75, marginBottom: 12 },
   mainAvatar: { width: 110, height: 110, borderRadius: 55, borderWidth: 4, borderColor: NEUTRAL.white },
-  cameraIcon: { position: 'absolute', bottom: 5, right: 5, backgroundColor: BRAND.primary, padding: 8, borderRadius: 20, borderWidth: 2, borderColor: NEUTRAL.white },
-  
+  cameraIcon: { position: 'absolute', bottom: 5, right: 0, backgroundColor: BRAND.primary, padding: 8, borderRadius: 20, borderWidth: 3, borderColor: NEUTRAL.white, justifyContent: 'center', alignItems: 'center', minWidth: 35, minHeight: 35 },
   nameSection: { alignItems: 'center', marginBottom: 20 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  userName: { fontSize: 22, fontWeight: '900', color: NEUTRAL.dark },
-  userSpec: { fontSize: 14, color: BRAND.primary, fontWeight: '700', marginTop: 4 },
-  locationBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: NEUTRAL.lightGray, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginTop: 10 },
-  locationBadgeText: { fontSize: 12, fontWeight: '700', color: NEUTRAL.gray },
-
-  // TARJETA DE AVISO DE AUDITORÍA
-  warningCard: { backgroundColor: '#FFF5F5', width: '100%', padding: 15, borderRadius: 16, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: BRAND.danger },
-  warningHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  warningTitle: { fontSize: 14, fontWeight: '800', color: BRAND.danger },
-  warningText: { fontSize: 12, color: '#666', lineHeight: 18 },
-
-  statsRow: { flexDirection: 'row', width: '100%', paddingTop: 15, borderTopWidth: 1, borderTopColor: NEUTRAL.border },
-  statBox: { flex: 1, alignItems: 'center' },
-  statDivider: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: NEUTRAL.border },
-  statValue: { fontSize: 16, fontWeight: '800', color: NEUTRAL.dark },
-  statLabel: { fontSize: 10, color: NEUTRAL.gray, textTransform: 'uppercase', marginTop: 2 },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-
-  contentSection: { padding: 25 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: NEUTRAL.dark, marginBottom: 15 },
-  
-  trustCard: { backgroundColor: NEUTRAL.white, padding: 18, borderRadius: 20, elevation: 2 },
-  trustHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  trustText: { fontSize: 14, color: NEUTRAL.dark },
-  progressBarBg: { width: '100%', height: 10, backgroundColor: NEUTRAL.lightGray, borderRadius: 5, overflow: 'hidden' },
+  userName: { fontSize: 24, fontWeight: '800', color: NEUTRAL.dark },
+  userSpec: { fontSize: 15, color: BRAND.primary, marginTop: 2, fontWeight: '600' },
+  locationBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: NEUTRAL.lightGray, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginTop: 12 },
+  locationBadgeText: { fontSize: 13, color: NEUTRAL.gray, fontWeight: '600' },
+  trustSection: { width: '100%', marginBottom: 24, paddingHorizontal: 4 },
+  trustHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'flex-end' },
+  trustLabel: { fontSize: 13, fontWeight: '700', color: NEUTRAL.gray },
+  trustValue: { fontSize: 13, fontWeight: '800', color: BRAND.success },
+  progressBarBg: { width: '100%', height: 8, backgroundColor: NEUTRAL.lightGray, borderRadius: 4, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: BRAND.success },
-  trustSub: { fontSize: 11, color: NEUTRAL.gray, marginTop: 12, fontStyle: 'italic' },
+  statsRow: { flexDirection: 'row', width: '100%', paddingTop: 20, borderTopWidth: 1, borderTopColor: NEUTRAL.border },
+  statBox: { flex: 1, alignItems: 'center' },
+  divider: { width: 1, backgroundColor: NEUTRAL.border, height: 25, alignSelf: 'center' },
+  statValue: { fontSize: 18, fontWeight: '800', color: NEUTRAL.dark },
+  statLabel: { fontSize: 11, color: NEUTRAL.gray, textTransform: 'uppercase', marginTop: 2 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  warningContainer: { paddingHorizontal: 16, marginTop: 16 },
+  warningCard: { backgroundColor: '#FFF5F5', flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, borderLeftWidth: 4, borderLeftColor: BRAND.danger, gap: 12 },
+  warningInfo: { flex: 1 },
+  warningTitle: { fontSize: 14, fontWeight: '800', color: BRAND.danger },
+  warningText: { fontSize: 12, color: NEUTRAL.gray, marginTop: 2 },
+  contentSection: { padding: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: NEUTRAL.dark, marginBottom: 12 },
+  bioCard: { backgroundColor: NEUTRAL.white, padding: 18, borderRadius: 20, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
+  bioText: { fontSize: 15, color: NEUTRAL.gray, lineHeight: 22 },
+  editBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.primary },
+  editBtnText: { color: BRAND.primary, fontWeight: '700', fontSize: 16 },
+  logoutBtn: { marginTop: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10 },
+  logoutBtnText: { color: NEUTRAL.gray, fontSize: 14, fontWeight: '500' },
 
-  mapCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: NEUTRAL.white, padding: 15, borderRadius: 20, gap: 15, elevation: 2 },
-  mapIconCircle: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: BRAND.primary + '10', alignItems: 'center', justifyContent: 'center' },
-  mapTitle: { fontSize: 15, fontWeight: '800', color: NEUTRAL.dark },
-  mapSub: { fontSize: 13, color: NEUTRAL.gray, marginTop: 2 },
-
-  bioCard: { backgroundColor: NEUTRAL.white, padding: 20, borderRadius: 20, elevation: 1 },
-  bioText: { fontSize: 14, color: NEUTRAL.gray, lineHeight: 22 },
-  
-  editBtn: { 
-    marginTop: 35, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', 
-    gap: 10, padding: 18, borderRadius: 16, borderWidth: 2, borderColor: BRAND.primary 
-  },
-  editBtnText: { color: BRAND.primary, fontWeight: '800', fontSize: 15 }
+  // --- ESTILOS DEL MODAL ---
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 20, padding: 20, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 15, color: NEUTRAL.dark },
+  input: { width: '100%', borderWidth: 1, borderColor: NEUTRAL.border, borderRadius: 10, padding: 12, marginBottom: 20, fontSize: 16, color: NEUTRAL.dark },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  cancelBtn: { padding: 10 },
+  cancelBtnText: { color: NEUTRAL.gray, fontWeight: '600' },
+  saveBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  saveBtnText: { color: '#FFF', fontWeight: '700' }
 });

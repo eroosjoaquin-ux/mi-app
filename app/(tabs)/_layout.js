@@ -8,9 +8,9 @@ export default function TabsLayout() {
       tabBarInactiveTintColor: '#65676B',
       headerShown: false, 
       tabBarStyle: { 
-        height: 70, 
-        paddingBottom: 12,
-        paddingTop: 8,
+        height: 120,          
+        paddingBottom: 25,   
+        paddingTop: 10,      
         backgroundColor: '#FFFFFF',
         borderTopWidth: 1,
         borderTopColor: '#E1E4E8'
@@ -47,9 +47,9 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 4. CHATS - Corregido segun tu estructura de archivos app/chat/chats */}
+      {/* 4. MENSAJES - Apuntamos a la LISTA como principal */}
       <Tabs.Screen 
-        name="chat/chats" 
+        name="chat/lista_chats" 
         options={{ 
           title: 'Mensajes',
           tabBarIcon: ({ color }) => <MessageSquare size={24} color={color} /> 
@@ -64,6 +64,22 @@ export default function TabsLayout() {
           tabBarIcon: ({ color }) => <Wallet size={24} color={color} /> 
         }} 
       />
+
+      {/* 6. OCULTAR RUTAS INTERNAS - Ocultamos el index y el chat individual */}
+      <Tabs.Screen 
+        name="chat/index" 
+        options={{ 
+          href: null, 
+        }} 
+      />
+
+      <Tabs.Screen 
+        name="chat/chats" 
+        options={{ 
+          href: null, 
+        }} 
+      />
+
     </Tabs>
   );
 }

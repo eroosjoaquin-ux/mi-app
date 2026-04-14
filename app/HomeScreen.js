@@ -12,10 +12,12 @@ import {
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -94,24 +96,28 @@ const BarraReputacion = ({ puntos }) => {
   );
 };
 
-export default function HomeScreen() {
+export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
   const router = useRouter();
-  const [seccionActual, setSeccionActual] = useState('trabajos'); // 'trabajos' es Oferta, 'empleados' es Demanda
+  const [seccionActual, setSeccionActual] = useState('trabajos'); 
   const [showSearchMenu, setShowSearchMenu] = useState(false);
   const [modalNotif, setModalNotif] = useState(false);
   const [modalBusqueda, setModalBusqueda] = useState({ visible: false, title: '', content: '' });
   
-  // ESTADOS PARA RASTREO DE DATOS
   const [posts, setPosts] = useState([]);
   const [cargando, setCargando] = useState(true);
 
-  // FUNCIÓN DE RASTREO (FETCH)
   const fetchPosts = async () => {
     try {
       setCargando(true);
       const { data, error } = await supabase
         .from('posts')
-        .select('*')
+        .select(`
+          *,
+          Usuarios:usuario_id (
+            usuario_empresa,
+            avatar_url
+          )
+        `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -123,17 +129,74 @@ export default function HomeScreen() {
     }
   };
 
-  // RECARGA AUTOMÁTICA AL VOLVER A LA PANTALLA
   useFocusEffect(
     useCallback(() => {
       fetchPosts();
     }, [])
   );
 
-  // FILTRADO DINÁMICO: 'oferta' va a 'trabajos', 'demanda' va a 'empleados'
   const postsFiltrados = posts.filter(post => 
     seccionActual === 'trabajos' ? post.tipo === 'oferta' : post.tipo === 'demanda'
   );
+
+  const handleContactar = async (post) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        Alert.alert("Acceso denegado", "Iniciá sesión para contactar.");
+        return;
+      }
+
+      const miId = session.user.id;
+      const suId = post.usuario_id;
+
+      if (miId === suId) {
+        Alert.alert("Aviso", "No podés contactarte a vos mismo.");
+        return;
+      }
+
+      let { data: existingChat, error: findError } = await supabase
+        .from('chats')
+        .select('id')
+        .or(`and(user_1.eq.${miId},user_2.eq.${suId}),and(user_1.eq.${suId},user_2.eq.${miId})`)
+        .single();
+
+      let finalChatId;
+
+      if (existingChat) {
+        finalChatId = existingChat.id;
+        await supabase
+          .from('chats')
+          .update({ updated_at: new Date() })
+          .eq('id', finalChatId);
+      } else {
+        const { data: newChat, error: createError } = await supabase
+          .from('chats')
+          .insert({ 
+            user_1: miId, 
+            user_2: suId,
+            updated_at: new Date()
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        finalChatId = newChat.id;
+      }
+
+      router.push({
+        pathname: '/chat/chats',
+        params: { 
+          id: finalChatId, 
+          name: post.Usuarios?.usuario_empresa || "Usuario" 
+        }
+      });
+    } catch (err) {
+      console.error("Error al sincronizar chat:", err.message);
+      Alert.alert("Error", "No se pudo iniciar la conversación.");
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -192,40 +255,55 @@ export default function HomeScreen() {
             <Text style={[styles.navIconLabel, { color: seccionActual === 'empleados' ? COLORS.blue : COLORS.textSecondary }]}>Demanda</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('./chat/chats')}>
+        {/* --- CAMBIO ACÁ: AHORA APUNTA A LA LISTA --- */}
+        <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('/chat/lista_chats')}>
             <MessageSquare size={24} color={COLORS.textSecondary} />
             <Text style={styles.navIconLabel}>Chat</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('/nuevo_post')}>
+        <TouchableOpacity style={styles.navIconContainer} onPress={onIrAPublicar}>
             <PlusCircle size={24} color={COLORS.textSecondary} />
             <Text style={styles.navIconLabel}>Publicar</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={cargando} onRefresh={fetchPosts} colors={[COLORS.blue]} />}
+      >
         <View style={styles.seccionInfo}>
           <Text style={styles.seccionTitulo}>
             {seccionActual === 'trabajos' ? "Mano de Obra Disponible" : "Búsquedas Laborales"}
           </Text>
         </View>
 
-        {cargando ? (
+        {cargando && posts.length === 0 ? (
             <ActivityIndicator size="large" color={COLORS.blue} style={{marginTop: 50}} />
-        ) : postsFiltrados.map((post) => (
+        ) : postsFiltrados.map((post) => {
+          const userName = post.Usuarios?.usuario_empresa || post.titulo || "Usuario";
+          const userAvatar = post.Usuarios?.avatar_url || post.userPhoto;
+
+          return (
           <View key={post.id} style={[styles.postCard, post.es_urgente && {borderColor: COLORS.red, borderWidth: 1.5}]}>
             <View style={styles.postHeader}>
               <View style={styles.contenedorAvatar}>
-                <Image source={{ uri: post.userPhoto }} style={styles.userPhoto} />
+                {userAvatar ? (
+                    <Image source={{ uri: userAvatar }} style={styles.userPhoto} />
+                ) : (
+                    <View style={[styles.userPhoto, {backgroundColor: COLORS.blue, justifyContent: 'center', alignItems: 'center'}]}>
+                        <Text style={{color: 'white', fontWeight: 'bold'}}>{userName.charAt(0)}</Text>
+                    </View>
+                )}
                 <BarraReputacion puntos={post.reputacion || 0} />
               </View>
               <View style={styles.postHeaderText}>
                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                  <Text style={styles.userName}>{post.userName || "Usuario"}</Text>
+                  <Text style={styles.userName}>{userName}</Text>
                   {post.verificado && <ShieldCheck size={16} color={COLORS.blue} style={{marginLeft: 4}} />}
                   {post.es_urgente && <Text style={{color: COLORS.red, fontSize: 10, fontWeight: 'bold', marginLeft: 8}}>🚨 URGENTE</Text>}
                 </View>
-                <Text style={styles.userSubtext}>{post.rubro} • {post.time || 'Recién'}</Text>
+                <Text style={styles.userSubtext}>{post.rubro} • {post.created_at ? new Date(post.created_at).toLocaleDateString() : 'Recién'}</Text>
               </View>
               <TouchableOpacity><MoreHorizontal size={20} color={COLORS.textSecondary} /></TouchableOpacity>
             </View>
@@ -235,8 +313,8 @@ export default function HomeScreen() {
                 {post.descripcion}
             </Text>
             
-            {post.postPhoto && (
-                <Image source={{ uri: post.postPhoto }} style={styles.postImage} resizeMode="cover" />
+            {post.imagen_url && (
+                <Image source={{ uri: post.imagen_url }} style={styles.postImage} resizeMode="cover" />
             )}
 
             <View style={styles.interactionBar}>
@@ -255,13 +333,17 @@ export default function HomeScreen() {
                 <Text style={styles.actionButtonText}>Comentar</Text>
               </TouchableOpacity>
               
-              <TouchableOpacity style={[styles.actionButton, styles.contactBtnActive]} onPress={() => router.push('./chat/chats')}>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.contactBtnActive]} 
+                onPress={() => handleContactar(post)}
+              >
                 <MessageSquare size={20} color="white" />
                 <Text style={{color: 'white', fontWeight: 'bold'}}>Contactar</Text>
               </TouchableOpacity>
             </View>
           </View>
-        ))}
+          );
+        })}
         {!cargando && postsFiltrados.length === 0 && (
             <Text style={{textAlign: 'center', color: COLORS.textSecondary, marginTop: 40}}>No hay anuncios en esta sección todavía.</Text>
         )}

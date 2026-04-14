@@ -5,10 +5,12 @@ import { supabase } from '../services/supabaseConfig';
 import HomeScreen from './HomeScreen';
 import LoginScreen from './LoginScreen';
 import RegistroScreen from './RegistroScreen';
+import NuevoPostScreen from './nuevo_post';
 import RegistroBiometrico from './registro_biometrico';
 
-// CORRECCIÓN: Nombre de archivo exacto
-import NuevoPostScreen from './nuevo_post';
+// IMPORTACIONES DE CHAT
+import DetalleChat from './(tabs)/chat';
+import ChatScreen from './(tabs)/chat/lista_chats';
 
 let yaValidadoCache = false;
 
@@ -17,12 +19,13 @@ LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 export default function MainApp() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false); 
   const [necesitaValidacion, setNecesitaValidacion] = useState(!yaValidadoCache);
   const [inicializado, setInicializado] = useState(false);
   
-  // NUEVO ESTADO: Para controlar cuándo se ve la pantalla de publicar
   const [mostrandoPublicar, setMostrandoPublicar] = useState(false);
+  const [mostrandoChat, setMostrandoChat] = useState(false);
+  const [chatSeleccionado, setChatSeleccionado] = useState(null);
 
   useEffect(() => {
     const checkUserStatus = async (currentSession) => {
@@ -36,7 +39,7 @@ export default function MainApp() {
         }
 
         try {
-          const { data, error } = await supabase
+          const { data } = await supabase
             .from('Usuarios')
             .select('esperando_verificacion')
             .eq('id', currentSession.user.id)
@@ -63,7 +66,8 @@ export default function MainApp() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (_event === 'SIGNED_OUT') {
-        yaValidadoCache = false; 
+        yaValidadoCache = false;
+        setIsRegistering(false); 
       }
       checkUserStatus(session);
     });
@@ -81,37 +85,50 @@ export default function MainApp() {
     );
   }
 
-  return (
-    <SafeAreaProvider>
-      {session ? (
-        (!necesitaValidacion || yaValidadoCache) ? (
-          // Lógica de pantallas principales
-          mostrandoPublicar ? (
-            <NuevoPostScreen 
-              onSuccess={() => {
-                // Al ejecutarse esto desde el OK de la alerta en nuevo_post.js
-                // el estado cambia y volvemos automáticamente al Home
-                setMostrandoPublicar(false);
-              }} 
-            />
-          ) : (
-            <HomeScreen 
-              onLogout={() => supabase.auth.signOut()} 
-              onIrAPublicar={() => setMostrandoPublicar(true)} 
-            />
-          )
-        ) : (
-          <RegistroBiometrico onComplete={() => {
-            yaValidadoCache = true;
-            setNecesitaValidacion(false);
-          }} />
-        )
-      ) : (
-        isRegistering ? (
+  // --- LÓGICA DE RENDERIZADO ---
+  
+  // 1. SI NO HAY SESIÓN: Bloque para Login y Registro
+  if (!session) {
+    return (
+      <SafeAreaProvider>
+        {isRegistering ? (
           <RegistroScreen onBack={() => setIsRegistering(false)} />
         ) : (
           <LoginScreen onGoToRegister={() => setIsRegistering(true)} />
+        )}
+      </SafeAreaProvider>
+    );
+  }
+
+  // 2. SI HAY SESIÓN: Tu lógica de Home, Post y Chat intacta
+  return (
+    <SafeAreaProvider>
+      {(!necesitaValidacion || yaValidadoCache) ? (
+        mostrandoPublicar ? (
+          <NuevoPostScreen onSuccess={() => setMostrandoPublicar(false)} />
+        ) : chatSeleccionado ? (
+          <DetalleChat 
+            chat={chatSeleccionado}
+            session={session} 
+            onBack={() => setChatSeleccionado(null)} 
+          />
+        ) : mostrandoChat ? (
+          <ChatScreen 
+            onBack={() => setMostrandoChat(false)}
+            onSeleccionarChat={(chat) => setChatSeleccionado(chat)}
+          />
+        ) : (
+          <HomeScreen 
+            onLogout={() => supabase.auth.signOut()} 
+            onIrAPublicar={() => setMostrandoPublicar(true)} 
+            onIrAlChat={() => setMostrandoChat(true)} 
+          />
         )
+      ) : (
+        <RegistroBiometrico onComplete={() => {
+          yaValidadoCache = true;
+          setNecesitaValidacion(false);
+        }} />
       )}
     </SafeAreaProvider>
   );
