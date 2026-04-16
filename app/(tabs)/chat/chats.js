@@ -2,7 +2,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CheckCircle, ChevronLeft, Clock, Plus, Send, ShieldAlert, XCircle } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert, Animated, BackHandler,
+  Alert,
+  BackHandler,
   FlatList,
   Image,
   KeyboardAvoidingView, Platform,
@@ -38,7 +39,6 @@ export default function ChatScreen({ chat, onBack, session }) {
   const [messages, setMessages] = useState([]);
   const [user, setUser] = useState(session?.user || null); 
   const [activeChatId, setActiveChatId] = useState(null);
-  const keyboardHeight = useRef(new Animated.Value(0)).current;
 
   const contieneTelefono = (texto) => /\b\d{7,}\b/.test(texto);
   const contieneRedSocial = (texto) => /(instagram|facebook|whatsapp|t.me|@)/i.test(texto);
@@ -50,6 +50,8 @@ export default function ChatScreen({ chat, onBack, session }) {
     if (contieneLink(texto) && !texto.includes("google.com/maps")) return false;
     return true;
   };
+
+  const esUUIDValido = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   useEffect(() => {
     inicializarChat();
@@ -76,18 +78,37 @@ export default function ChatScreen({ chat, onBack, session }) {
 
     if (!currentUser || !chatIdRaw) return;
 
-    await supabase.removeAllChannels();
+    if (!esUUIDValido(chatIdRaw)) {
+      console.warn("⚠️ Advertencia: chatIdRaw no es un UUID válido:", chatIdRaw);
+    }
 
+    // Cerramos canales anteriores antes de abrir uno nuevo para evitar duplicados
+    await supabase.removeAllChannels();
     setActiveChatId(chatIdRaw);
 
-    const { data } = await supabase
+    const { data: msgs, error } = await supabase
       .from('messages')
-      .select('*, Usuarios:sender_id(usuario_empresa, avatar_url)') 
+      .select('*') 
       .eq('chat_id', chatIdRaw)
       .order('created_at', { ascending: true });
     
-    setMessages(data || []);
+    if (error) {
+        console.error("🔴 Error al cargar mensajes:", error.message);
+        return;
+    }
 
+    const msgsConPerfil = await Promise.all((msgs || []).map(async (m) => {
+        const { data: profile } = await supabase
+            .from('Usuarios')
+            .select('usuario_empresa, avatar_url')
+            .eq('id', m.sender_id)
+            .single();
+        return { ...m, Usuarios: profile };
+    }));
+    
+    setMessages(msgsConPerfil);
+
+    // CONFIGURACIÓN REALTIME OPTIMIZADA
     supabase
       .channel(`room:${chatIdRaw}`)
       .on('postgres_changes', { 
@@ -96,6 +117,9 @@ export default function ChatScreen({ chat, onBack, session }) {
           table: 'messages', 
           filter: `chat_id=eq.${chatIdRaw}` 
       }, async (payload) => {
+        console.log("📩 Nuevo mensaje recibido en tiempo real:", payload.new.text);
+
+        // Buscamos los datos del remitente para el nuevo mensaje
         const { data: userData } = await supabase
           .from('Usuarios')
           .select('usuario_empresa, avatar_url')
@@ -103,20 +127,30 @@ export default function ChatScreen({ chat, onBack, session }) {
           .single();
         
         const mensajeConPerfil = { ...payload.new, Usuarios: userData };
+        
+        // Actualizamos el estado asegurando que React note el cambio de referencia del array
         setMessages((prev) => {
           const exists = prev.find(m => m.id === payload.new.id);
-          return exists ? prev : [...prev, mensajeConPerfil];
+          if (exists) return prev;
+          return [...prev, mensajeConPerfil];
         });
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`📡 Estado suscripción canal ${chatIdRaw}:`, status);
+      });
   };
 
   const enviarMensaje = async (textoInput, tipo = 'text', metadata = {}) => {
     const textoFinal = textoInput || mensaje;
-    if (!textoFinal.trim() || !activeChatId) return;
+    
+    if (!textoFinal.trim() || !activeChatId || !esUUIDValido(activeChatId)) {
+      console.error("DEBUG: ID de chat no válido", activeChatId);
+      Alert.alert("Error de chat", "El identificador del chat no es válido.");
+      return;
+    }
 
     if (!mensajeValido(textoFinal)) {
-      Alert.alert("Mensaje bloqueado", "No podés enviar datos de contacto o links externos.");
+      Alert.alert("Mensaje bloqueado", "No podés enviar datos de contacto.");
       return;
     }
 
@@ -125,14 +159,14 @@ export default function ChatScreen({ chat, onBack, session }) {
       sender_id: user.id,
       text: textoFinal,
       type: tipo,
-      amount: metadata.amount || null,
+      amount: metadata.amount ? parseFloat(metadata.amount) : null,
       description: metadata.description || null,
       status: 'pending'
     });
 
     if (error) {
-      Alert.alert("Error", "No se pudo enviar el mensaje");
-      console.error(error);
+      console.error("🔴 ERROR AL ENVIAR:", JSON.stringify(error, null, 2));
+      Alert.alert("Error", `No se pudo enviar: ${error.message}`);
     } else {
       setMensaje('');
     }
@@ -230,7 +264,6 @@ export default function ChatScreen({ chat, onBack, session }) {
       <KeyboardAvoidingView 
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        // Offset ajustado para que en Android no se entierre ni flote
         keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 60 : 0}
       >
         <FlatList

@@ -22,12 +22,16 @@ const ExpoSqliteStorage = {
 };
 
 // Configuración optimizada y blindada
+// Se agregaron headers globales para asegurar que la API Key siempre viaje
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: ExpoSqliteStorage, // Usamos el wrapper en lugar de AsyncStorage directo
+    storage: ExpoSqliteStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false, 
+  },
+  global: {
+    headers: { 'apikey': supabaseAnonKey }, // Esto fuerza la llave en cada llamada
   },
 });
 
