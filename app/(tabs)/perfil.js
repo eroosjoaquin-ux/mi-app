@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import {
+  Briefcase,
   Camera,
   ChevronLeft,
   Edit3, LogOut, MapPin,
@@ -15,15 +16,13 @@ import {
   Alert, Dimensions, Image,
   Modal,
   ScrollView, StyleSheet, Text,
-  TextInput // Se agregaron Modal y TextInput
-  ,
+  TextInput,
   TouchableOpacity, View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width, height } = Dimensions.get('window');
 
-// Configuración de Supabase
 const supabaseUrl = 'https://kqittlmnkvdaaualuswr.supabase.co';
 const supabaseAnonKey = 'sb_publishable_2Z4BPTVd0qIu4npa-sNjWw_IJ5QqqD_';
 
@@ -45,17 +44,25 @@ export default function PerfilScreen() {
   const [userData, setUserData] = useState(null);
   const [fotoPerfil, setFotoPerfil] = useState('https://randomuser.me/api/portraits/men/32.jpg');
 
-  // --- ESTADOS PARA EL MODAL ---
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalMetricasVisible, setModalMetricasVisible] = useState(false); 
   const [nuevoNombre, setNuevoNombre] = useState('');
+
+  // ESTADO PARA EL RADIO DE COBERTURA
+  const [radioCobertura, setRadioCobertura] = useState(0);
+
+  const [stats, setStats] = useState({
+    trabajos: 0,
+    rating: 0,
+    reputacion: 0 
+  });
 
   const perfilInfo = {
     especialidad: 'Técnico en Mantenimiento Integrado',
     bio: 'Comprometido con la calidad y la puntualidad. Especialista en soluciones técnicas para el hogar y comercio.',
-    reputacion: 98,
     verificado: false,
-    metricas: { trabajos: 142, rating: 4.9, antiguedad: '2 años' },
-    zonaNombre: 'San Vicente',
+    antiguedad: 'Nuevo',
+    zonaNombre: 'San Vicente', // Nombre base
   };
 
   useEffect(() => {
@@ -71,9 +78,10 @@ export default function PerfilScreen() {
       setNuevoNombre(nombreRespaldo);
 
       try {
+        // AGREGAMOS 'radio' A LA CONSULTA SELECT
         const { data, error } = await supabase
           .from('Usuarios')
-          .select('nombre, avatar_url')
+          .select('nombre, avatar_url, puntos_calificacion, trabajos_completados, radio')
           .eq('id', session.user.id)
           .single();
         
@@ -83,14 +91,23 @@ export default function PerfilScreen() {
             setNuevoNombre(data.nombre);
           }
           if (data.avatar_url) setFotoPerfil(data.avatar_url);
+          
+          // GUARDAMOS EL RADIO DEL REGISTRO
+          if (data.radio) setRadioCobertura(data.radio);
+          
+          const ratingReal = data.puntos_calificacion || 0;
+          setStats({
+            trabajos: data.trabajos_completados || 0,
+            rating: ratingReal.toFixed(1),
+            reputacion: Math.round(ratingReal * 20)
+          });
         }
       } catch (e) {
-        console.error("Error cargando perfil desde tabla Usuarios:", e);
+        console.error("Error cargando perfil:", e);
       }
     }
   };
 
-  // --- FUNCIÓN PARA ACTUALIZAR NOMBRE DESDE EL MODAL ---
   const actualizarNombre = async () => {
     if (!nuevoNombre || nuevoNombre.trim().length < 3) {
       return Alert.alert("Error", "El nombre debe tener al menos 3 caracteres.");
@@ -174,8 +191,7 @@ export default function PerfilScreen() {
         setFotoPerfil(publicUrl);
         Alert.alert("¡Éxito!", "Tu foto de perfil ha sido actualizada.");
       } catch (error) {
-        console.error("Error detallado:", error);
-        Alert.alert("Error", "No se pudo subir la imagen: " + error.message);
+        Alert.alert("Error", "No se pudo subir la imagen.");
       } finally {
         setLoading(false);
       }
@@ -185,13 +201,8 @@ export default function PerfilScreen() {
   return (
     <View style={styles.container}>
       
-      {/* --- MODAL DE EDICIÓN --- */}
-      <Modal
-        visible={modalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setModalVisible(false)}
-      >
+      {/* --- MODAL DE EDICIÓN NOMBRE --- */}
+      <Modal visible={modalVisible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Editar Nombre</Text>
@@ -199,24 +210,44 @@ export default function PerfilScreen() {
               style={styles.input}
               value={nuevoNombre}
               onChangeText={setNuevoNombre}
-              placeholder="Nombre de usuario o empresa"
               placeholderTextColor={NEUTRAL.gray}
             />
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.cancelBtn} 
-                onPress={() => setModalVisible(false)}
-              >
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}>
                 <Text style={styles.cancelBtnText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.saveBtn} 
-                onPress={actualizarNombre}
-                disabled={loading}
-              >
+              <TouchableOpacity style={styles.saveBtn} onPress={actualizarNombre} disabled={loading}>
                 {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>Guardar</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- MODAL DE MÉTRICAS --- */}
+      <Modal visible={modalMetricasVisible} transparent={true} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <Briefcase size={40} color={BRAND.primary} />
+              <Text style={[styles.modalTitle, { marginTop: 10 }]}>Historial de Trabajo</Text>
+            </View>
+            
+            <View style={styles.metricRow}>
+              <Text style={styles.metricLabel}>Trabajos Terminados:</Text>
+              <Text style={styles.metricValue}>{stats.trabajos}</Text>
+            </View>
+            <View style={styles.metricRow}>
+              <Text style={styles.metricLabel}>Puntuación General:</Text>
+              <Text style={styles.metricValue}>{stats.rating} ★</Text>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.saveBtn, { width: '100%', marginTop: 20 }]} 
+              onPress={() => setModalMetricasVisible(false)}
+            >
+              <Text style={styles.saveBtnText}>Cerrar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -246,38 +277,51 @@ export default function PerfilScreen() {
           <View style={styles.nameSection}>
             <Text style={styles.userName}>{userData?.nombre || "Cargando..."}</Text>
             <Text style={styles.userSpec}>{perfilInfo.especialidad}</Text>
+            
+            {/* BADGE DE UBICACIÓN ACTUALIZADO CON RADIO */}
             <View style={styles.locationBadge}>
               <MapPin size={14} color={BRAND.primary} />
-              <Text style={styles.locationBadgeText}>{perfilInfo.zonaNombre}</Text>
+              <Text style={styles.locationBadgeText}>
+                Área de trabajo: {radioCobertura}km ({perfilInfo.zonaNombre})
+              </Text>
             </View>
           </View>
 
-          <View style={styles.trustSection}>
+          <TouchableOpacity 
+            style={styles.trustSection} 
+            onPress={() => setModalMetricasVisible(true)}
+            activeOpacity={0.7}
+          >
             <View style={styles.trustHeader}>
-              <Text style={styles.trustLabel}>Indicador de Confianza</Text>
-              <Text style={styles.trustValue}>{perfilInfo.reputacion}%</Text>
+              <Text style={styles.trustLabel}>Nivel de Confianza</Text>
+              <Text style={[styles.trustValue, { color: stats.reputacion > 50 ? BRAND.success : BRAND.warning }]}>
+                {stats.reputacion}%
+              </Text>
             </View>
             <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${perfilInfo.reputacion}%` }]} />
+              <View style={[styles.progressBarFill, { width: `${stats.reputacion}%`, backgroundColor: stats.reputacion > 50 ? BRAND.success : BRAND.warning }]} />
             </View>
-          </View>
+            <Text style={{ fontSize: 10, color: NEUTRAL.gray, marginTop: 5, textAlign: 'center' }}>
+              Toca para ver detalles de trabajos
+            </Text>
+          </TouchableOpacity>
 
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{perfilInfo.metricas.trabajos}</Text>
+              <Text style={styles.statValue}>{stats.trabajos}</Text>
               <Text style={styles.statLabel}>Servicios</Text>
             </View>
             <View style={styles.divider} />
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{perfilInfo.metricas.rating}</Text>
-              <View style={styles.ratingRow}>
+              <Text style={styles.statValue}>{stats.rating}</Text>
+              <div style={styles.ratingRow}>
                 <Star size={10} color={BRAND.warning} fill={BRAND.warning} />
                 <Text style={styles.statLabel}>Rating</Text>
-              </View>
+              </div>
             </View>
             <View style={styles.divider} />
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{perfilInfo.metricas.antiguedad}</Text>
+              <Text style={styles.statValue}>{perfilInfo.antiguedad}</Text>
               <Text style={styles.statLabel}>En Brexel</Text>
             </View>
           </View>
@@ -301,11 +345,7 @@ export default function PerfilScreen() {
             <Text style={styles.bioText}>{perfilInfo.bio}</Text>
           </View>
           
-          <TouchableOpacity 
-            style={styles.editBtn} 
-            onPress={() => setModalVisible(true)} // Abre el Modal
-            disabled={loading}
-          >
+          <TouchableOpacity style={styles.editBtn} onPress={() => setModalVisible(true)} disabled={loading}>
             <Edit3 size={18} color={BRAND.primary} />
             <Text style={styles.editBtnText}>Editar Perfil</Text>
           </TouchableOpacity>
@@ -338,12 +378,12 @@ const styles = StyleSheet.create({
   userSpec: { fontSize: 15, color: BRAND.primary, marginTop: 2, fontWeight: '600' },
   locationBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: NEUTRAL.lightGray, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginTop: 12 },
   locationBadgeText: { fontSize: 13, color: NEUTRAL.gray, fontWeight: '600' },
-  trustSection: { width: '100%', marginBottom: 24, paddingHorizontal: 4 },
+  trustSection: { width: '100%', marginBottom: 24, padding: 15, backgroundColor: '#F8F9FA', borderRadius: 20, borderWidth: 1, borderColor: NEUTRAL.border },
   trustHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'flex-end' },
   trustLabel: { fontSize: 13, fontWeight: '700', color: NEUTRAL.gray },
-  trustValue: { fontSize: 13, fontWeight: '800', color: BRAND.success },
-  progressBarBg: { width: '100%', height: 8, backgroundColor: NEUTRAL.lightGray, borderRadius: 4, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: BRAND.success },
+  trustValue: { fontSize: 13, fontWeight: '800' },
+  progressBarBg: { width: '100%', height: 10, backgroundColor: NEUTRAL.border, borderRadius: 5, overflow: 'hidden' },
+  progressBarFill: { height: '100%' },
   statsRow: { flexDirection: 'row', width: '100%', paddingTop: 20, borderTopWidth: 1, borderTopColor: NEUTRAL.border },
   statBox: { flex: 1, alignItems: 'center' },
   divider: { width: 1, backgroundColor: NEUTRAL.border, height: 25, alignSelf: 'center' },
@@ -363,15 +403,16 @@ const styles = StyleSheet.create({
   editBtnText: { color: BRAND.primary, fontWeight: '700', fontSize: 16 },
   logoutBtn: { marginTop: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10 },
   logoutBtnText: { color: NEUTRAL.gray, fontSize: 14, fontWeight: '500' },
-
-  // --- ESTILOS DEL MODAL ---
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 20, padding: 20, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
-  modalTitle: { fontSize: 18, fontWeight: '800', marginBottom: 15, color: NEUTRAL.dark },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 28, padding: 25, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 15, elevation: 10 },
+  modalTitle: { fontSize: 20, fontWeight: '900', color: NEUTRAL.dark, textAlign: 'center' },
+  metricRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: NEUTRAL.border },
+  metricLabel: { fontSize: 15, color: NEUTRAL.gray, fontWeight: '600' },
+  metricValue: { fontSize: 16, color: BRAND.primary, fontWeight: '800' },
   input: { width: '100%', borderWidth: 1, borderColor: NEUTRAL.border, borderRadius: 10, padding: 12, marginBottom: 20, fontSize: 16, color: NEUTRAL.dark },
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   cancelBtn: { padding: 10 },
   cancelBtnText: { color: NEUTRAL.gray, fontWeight: '600' },
-  saveBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  saveBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
   saveBtnText: { color: '#FFF', fontWeight: '700' }
 });

@@ -1,43 +1,41 @@
 {
   "expo": {
-    "name": "mi-segunda-app",
-    "slug": "mi-segunda-app",
+    "name": "Brexel",
+    "slug": "brexel",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "misegundaapp",
+    "scheme": "brexel",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.erosjoaquin.brexel"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png"
+        "foregroundImage": "./assets/images/icon.png"
       },
-      "package": "com.erosjoaquin.misegundaapp",
+      "package": "com.erosjoaquin.brexel",
       "permissions": [
-        "android.permission.INTERNET"
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "plugins": [
       "expo-router",
-      [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.com.erosjoaquin.misegundaapp",
-          "enableGooglePay": true
-        }
-      ],
       "expo-camera",
-      "expo-location"
+      "expo-location",
+      "expo-secure-store",
+      "expo-localization"
     ],
     "extra": {
       "router": {
         "origin": false
       },
       "eas": {
-        "projectId": "1f80a331-caff-4756-b11b-1c97ab99eb51"
+        "projectId": "afb6d4fc-012d-4d4a-9c12-e241fd18e90e"
       }
     }
   }

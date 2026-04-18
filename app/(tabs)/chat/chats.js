@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// --- CONFIGURACIÓN SUPABASE ---
+// --- IMPORTACIONES LIMPIAS ---
+import { NotificacionesManager } from '../../../services/notificaciones';
 import { supabase } from '../../../services/supabaseConfig';
 
 const COLORS = {
@@ -38,7 +39,7 @@ export default function ChatScreen({ chat, onBack, session }) {
   const [mensaje, setMensaje] = useState('');
   const [messages, setMessages] = useState([]);
   const [user, setUser] = useState(session?.user || null); 
-  const [activeChatId, setActiveChatId] = useState(null);
+  const [activeChatId, setActiveChatId] = useState(chatIdRaw);
 
   const contieneTelefono = (texto) => /\b\d{7,}\b/.test(texto);
   const contieneRedSocial = (texto) => /(instagram|facebook|whatsapp|t.me|@)/i.test(texto);
@@ -47,14 +48,17 @@ export default function ChatScreen({ chat, onBack, session }) {
   const mensajeValido = (texto) => {
     if (contieneTelefono(texto)) return false;
     if (contieneRedSocial(texto)) return false;
-    if (contieneLink(texto) && !texto.includes("google.com/maps")) return false;
+    if (contieneLink(texto) && !texto.includes("googleusercontent.com")) return false;
     return true;
   };
 
-  const esUUIDValido = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-
   useEffect(() => {
     inicializarChat();
+
+    // Sincronizamos token al entrar al chat para asegurar que esté fresco
+    if (user) {
+        NotificacionesManager.register(user.id);
+    }
 
     const backAction = () => { 
       if (onBack) { onBack(); } else { router.back(); }
@@ -69,106 +73,83 @@ export default function ChatScreen({ chat, onBack, session }) {
   }, [chatIdRaw]);
 
   const inicializarChat = async () => {
-    let currentUser = user;
-    if (!currentUser) {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      currentUser = currentSession?.user;
-      if (currentUser) setUser(currentUser);
-    }
+    try {
+        let currentUser = user;
+        if (!currentUser) {
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          currentUser = currentSession?.user;
+          if (currentUser) setUser(currentUser);
+        }
 
-    if (!currentUser || !chatIdRaw) return;
+        if (!currentUser || !chatIdRaw) return;
+        setActiveChatId(chatIdRaw);
 
-    if (!esUUIDValido(chatIdRaw)) {
-      console.warn("⚠️ Advertencia: chatIdRaw no es un UUID válido:", chatIdRaw);
-    }
-
-    // Cerramos canales anteriores antes de abrir uno nuevo para evitar duplicados
-    await supabase.removeAllChannels();
-    setActiveChatId(chatIdRaw);
-
-    const { data: msgs, error } = await supabase
-      .from('messages')
-      .select('*') 
-      .eq('chat_id', chatIdRaw)
-      .order('created_at', { ascending: true });
-    
-    if (error) {
-        console.error("🔴 Error al cargar mensajes:", error.message);
-        return;
-    }
-
-    const msgsConPerfil = await Promise.all((msgs || []).map(async (m) => {
-        const { data: profile } = await supabase
-            .from('Usuarios')
-            .select('usuario_empresa, avatar_url')
-            .eq('id', m.sender_id)
-            .single();
-        return { ...m, Usuarios: profile };
-    }));
-    
-    setMessages(msgsConPerfil);
-
-    // CONFIGURACIÓN REALTIME OPTIMIZADA
-    supabase
-      .channel(`room:${chatIdRaw}`)
-      .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'messages', 
-          filter: `chat_id=eq.${chatIdRaw}` 
-      }, async (payload) => {
-        console.log("📩 Nuevo mensaje recibido en tiempo real:", payload.new.text);
-
-        // Buscamos los datos del remitente para el nuevo mensaje
-        const { data: userData } = await supabase
-          .from('Usuarios')
-          .select('usuario_empresa, avatar_url')
-          .eq('id', payload.new.sender_id)
-          .single();
+        const { data: msgs, error } = await supabase
+          .from('messages')
+          .select('*, Usuarios!messages_sender_id_fkey(usuario_empresa, avatar_url)') 
+          .eq('chat_id', chatIdRaw)
+          .order('created_at', { ascending: true });
         
-        const mensajeConPerfil = { ...payload.new, Usuarios: userData };
-        
-        // Actualizamos el estado asegurando que React note el cambio de referencia del array
-        setMessages((prev) => {
-          const exists = prev.find(m => m.id === payload.new.id);
-          if (exists) return prev;
-          return [...prev, mensajeConPerfil];
-        });
-      })
-      .subscribe((status) => {
-        console.log(`📡 Estado suscripción canal ${chatIdRaw}:`, status);
-      });
+        if (error) throw error;
+        setMessages(msgs || []);
+
+        supabase
+          .channel(`room:${chatIdRaw}`)
+          .on('postgres_changes', { 
+              event: 'INSERT', 
+              schema: 'public', 
+              table: 'messages', 
+              filter: `chat_id=eq.${chatIdRaw}` 
+          }, async (payload) => {
+            const { data: userData } = await supabase
+              .from('Usuarios')
+              .select('usuario_empresa, avatar_url')
+              .eq('id', payload.new.sender_id)
+              .single();
+            
+            const mensajeConPerfil = { ...payload.new, Usuarios: userData };
+            setMessages((prev) => {
+              if (prev.find(m => m.id === payload.new.id)) return prev;
+              return [...prev, mensajeConPerfil];
+            });
+          })
+          .subscribe();
+    } catch (e) {
+        console.log("Error al inicializar:", e.message);
+    }
   };
 
   const enviarMensaje = async (textoInput, tipo = 'text', metadata = {}) => {
     const textoFinal = textoInput || mensaje;
+    const currentChatId = activeChatId || chatIdRaw;
     
-    if (!textoFinal.trim() || !activeChatId || !esUUIDValido(activeChatId)) {
-      console.error("DEBUG: ID de chat no válido", activeChatId);
-      Alert.alert("Error de chat", "El identificador del chat no es válido.");
-      return;
-    }
-
+    if (!textoFinal.trim() || !currentChatId) return;
     if (!mensajeValido(textoFinal)) {
       Alert.alert("Mensaje bloqueado", "No podés enviar datos de contacto.");
       return;
     }
 
-    const { error } = await supabase.from('messages').insert({
-      chat_id: activeChatId,
-      sender_id: user.id,
-      text: textoFinal,
-      type: tipo,
-      amount: metadata.amount ? parseFloat(metadata.amount) : null,
-      description: metadata.description || null,
-      status: 'pending'
-    });
+    let currentUserId = user?.id;
+    if (!currentUserId) {
+        const { data: s } = await supabase.auth.getSession();
+        currentUserId = s?.session?.user?.id;
+    }
 
-    if (error) {
-      console.error("🔴 ERROR AL ENVIAR:", JSON.stringify(error, null, 2));
-      Alert.alert("Error", `No se pudo enviar: ${error.message}`);
-    } else {
-      setMensaje('');
+    try {
+        const { error } = await supabase.from('messages').insert({
+          chat_id: currentChatId,
+          sender_id: currentUserId,
+          text: textoFinal,
+          type: tipo,
+          amount: metadata.amount ? parseFloat(metadata.amount) : null,
+          description: metadata.description || null,
+          status: 'pending'
+        });
+
+        if (error) throw error;
+        setMensaje(''); 
+    } catch (e) {
+        Alert.alert("Error de envío", e.message);
     }
   };
 
@@ -195,7 +176,6 @@ export default function ChatScreen({ chat, onBack, session }) {
   const renderMessage = ({ item }) => {
     const isMe = item.sender_id === user?.id;
     const time = item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    
     const nombreRemitente = item.Usuarios?.usuario_empresa || "Usuario";
     const avatarRemitente = item.Usuarios?.avatar_url;
 

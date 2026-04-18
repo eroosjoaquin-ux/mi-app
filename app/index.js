@@ -1,31 +1,34 @@
+import { useRouter, useSegments } from 'expo-router'; // Importante para detectar la ruta
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, LogBox, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../services/supabaseConfig';
+
+// Importaciones de pantallas
+import DetalleChat from './(tabs)/chat';
+import ChatScreen from './(tabs)/chat/lista_chats';
 import HomeScreen from './HomeScreen';
 import LoginScreen from './LoginScreen';
 import RegistroScreen from './RegistroScreen';
 import NuevoPostScreen from './nuevo_post';
 import RegistroBiometrico from './registro_biometrico';
 
-// IMPORTACIONES DE CHAT
-import DetalleChat from './(tabs)/chat';
-import ChatScreen from './(tabs)/chat/lista_chats';
-
 let yaValidadoCache = false;
-
 LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
 export default function MainApp() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isRegistering, setIsRegistering] = useState(false); 
   const [necesitaValidacion, setNecesitaValidacion] = useState(!yaValidadoCache);
   const [inicializado, setInicializado] = useState(false);
   
+  // Estados de navegación interna
   const [mostrandoPublicar, setMostrandoPublicar] = useState(false);
   const [mostrandoChat, setMostrandoChat] = useState(false);
   const [chatSeleccionado, setChatSeleccionado] = useState(null);
+
+  const segments = useSegments(); // Detecta en qué "página" de archivo estamos
+  const router = useRouter();
 
   useEffect(() => {
     const checkUserStatus = async (currentSession) => {
@@ -45,7 +48,7 @@ export default function MainApp() {
             .eq('id', currentSession.user.id)
             .maybeSingle(); 
 
-          if (data && data.esperando_verificacion === true) {
+          if (data && data.esperando_verificacion === false) { // Cambio: false significa que YA se validó
             yaValidadoCache = true; 
             setNecesitaValidacion(false);
           } else {
@@ -67,7 +70,6 @@ export default function MainApp() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (_event === 'SIGNED_OUT') {
         yaValidadoCache = false;
-        setIsRegistering(false); 
       }
       checkUserStatus(session);
     });
@@ -85,22 +87,23 @@ export default function MainApp() {
     );
   }
 
-  // --- LÓGICA DE RENDERIZADO ---
-  
-  // 1. SI NO HAY SESIÓN: Bloque para Login y Registro
+  // --- LÓGICA DE RENDERIZADO COMPATIBLE CON EXPO ROUTER ---
+
+  // 1. Si el usuario está intentando ver el archivo RegistroScreen, se lo permitimos
+  if (segments.includes('RegistroScreen')) {
+    return <RegistroScreen onBack={() => router.back()} onNextStep={() => setNecesitaValidacion(true)} />;
+  }
+
+  // 2. SI NO HAY SESIÓN: Mostramos Login por defecto
   if (!session) {
     return (
       <SafeAreaProvider>
-        {isRegistering ? (
-          <RegistroScreen onBack={() => setIsRegistering(false)} />
-        ) : (
-          <LoginScreen onGoToRegister={() => setIsRegistering(true)} />
-        )}
+        <LoginScreen />
       </SafeAreaProvider>
     );
   }
 
-  // 2. SI HAY SESIÓN: Tu lógica de Home, Post y Chat intacta
+  // 3. SI HAY SESIÓN: Lógica de Home, Validación Biométrica, etc.
   return (
     <SafeAreaProvider>
       {(!necesitaValidacion || yaValidadoCache) ? (

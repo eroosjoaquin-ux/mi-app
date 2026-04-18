@@ -9,7 +9,7 @@ import {
   Wrench,
   X
 } from 'lucide-react-native';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -29,7 +29,8 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// IMPORTACIÓN DE SUPABASE
+// --- IMPORTACIÓN ARREGLADA (Sin llaves porque es export default) ---
+import NotificacionesManager from '../services/notificaciones';
 import { supabase } from '../services/supabaseConfig';
 
 const { width, height } = Dimensions.get('window');
@@ -105,6 +106,20 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
   
   const [posts, setPosts] = useState([]);
   const [cargando, setCargando] = useState(true);
+  const [user, setUser] = useState(null);
+
+  // 1. SINCRONIZAR NOTIFICACIONES AL CARGAR LA HOME
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        // Usamos el encadenamiento opcional (?.) por si el manager no está listo
+        NotificacionesManager?.register?.(session.user.id);
+      }
+    };
+    checkUser();
+  }, []);
 
   const fetchPosts = async () => {
     try {
@@ -198,6 +213,10 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
     }
   };
 
+  const handlePressCampanita = () => {
+    setModalNotif(true);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" />
@@ -214,7 +233,7 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.logoText}>Brexel</Text>
-          <View style={styles.headerRightIcons}>
+          <div style={styles.headerRightIcons}>
             <TouchableOpacity style={styles.headerCircleBtn} onPress={() => setShowSearchMenu(!showSearchMenu)}>
               <Search size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
@@ -229,7 +248,7 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
                 </TouchableOpacity>
               </View>
             )}
-            <TouchableOpacity style={styles.headerCircleBtn} onPress={() => setModalNotif(true)}>
+            <TouchableOpacity style={styles.headerCircleBtn} onPress={handlePressCampanita}>
               <View style={styles.badge}><Text style={styles.badgeText}>1</Text></View>
               <Bell size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
@@ -237,7 +256,7 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
             <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/perfil')}>
               <UserCircle2 size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
-          </View>
+          </div>
         </View>
       </View>
 
@@ -255,7 +274,6 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
             <Text style={[styles.navIconLabel, { color: seccionActual === 'empleados' ? COLORS.blue : COLORS.textSecondary }]}>Demanda</Text>
         </TouchableOpacity>
 
-        {/* --- CAMBIO ACÁ: AHORA APUNTA A LA LISTA --- */}
         <TouchableOpacity style={styles.navIconContainer} onPress={() => router.push('/chat/lista_chats')}>
             <MessageSquare size={24} color={COLORS.textSecondary} />
             <Text style={styles.navIconLabel}>Chat</Text>

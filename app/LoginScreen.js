@@ -129,7 +129,10 @@ export default function LoginScreen({ onGoToRegister }) {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.footerLink} onPress={onGoToRegister}>
+          <TouchableOpacity 
+            style={styles.footerLink} 
+            onPress={() => router.push('/RegistroScreen')} 
+          >
             <Text style={styles.footerText}>
               ¿No tenés cuenta? <Text style={styles.linkText}>Registrate</Text>
             </Text>

@@ -1,0 +1,93 @@
+{
+  "expo": {
+    "name": "Brexel",
+    "slug": "brexel",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "brexel",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.eros.brexel"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#1e3a8a"
+      },
+      "package": "com.eros.brexel",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "FOREGROUND_SERVICE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "VIBRATE",
+        "READ_CONTACTS",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1e3a8a"
+        }
+      ],
+      "expo-secure-store",
+      "expo-localization",
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "Permitir que la app use tu ubicación para encontrar servicios cercanos."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir acceso a la cámara para fotos de perfil y escaneo."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Permitir el uso de FaceID para proteger tus pagos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La app necesita acceso a tus fotos para subir imágenes del trabajo."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Permitir acceso a contactos para invitar amigos."
+        }
+      ],
+      [
+        "expo-face-detector",
+        {
+          "faceDetectorSettings": {
+            "mode": "accurate",
+            "detectLandmarks": "all",
+            "runClassifications": "all"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "afb6d4fc-012d-4d4a-9c12-e241fd18e90e"
+      }
+    }
+  }
+}
