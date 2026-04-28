@@ -17,10 +17,10 @@ import {
   View
 } from 'react-native';
 
-// CORRECCIÓN DE RUTA: Apunta a la carpeta services desde la raíz de app
+// Mantenemos la conexión centralizada para asegurar la sesión eterna
 import { supabase } from '../services/supabaseConfig';
 
-export default function LoginScreen({ onGoToRegister }) {
+export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [clave, setClave] = useState('');
@@ -52,7 +52,7 @@ export default function LoginScreen({ onGoToRegister }) {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password: clave,
       });
@@ -66,9 +66,10 @@ export default function LoginScreen({ onGoToRegister }) {
         await AsyncStorage.removeItem("user_email");
       }
 
-      // Si usas Expo Router y tenés un listener de sesión, 
-      // esto redirigirá solo. Si no, podés usar:
-      // router.replace('/(tabs)/home'); 
+      // CAMBIO CLAVE: Redirección a HomeScreen tras éxito.
+      // Usamos replace('/') para que el Index/Layout evalúe y te mande 
+      // directamente al Home sin dejar rastro del Login en el historial.
+      router.replace('/HomeScreen'); 
 
     } catch (e) {
       Alert.alert("Error", "Email o contraseña inválidos.");
@@ -85,7 +86,7 @@ export default function LoginScreen({ onGoToRegister }) {
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.innerContainer}>
-          <Text style={styles.loginTitle}>Eros App</Text>
+          <Text style={styles.loginTitle}>Brexel</Text>
           
           <TextInput 
             style={styles.input} 

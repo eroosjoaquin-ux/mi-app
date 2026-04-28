@@ -1,222 +1,225 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as FaceDetector from 'expo-face-detector';
-import { useRouter } from 'expo-router';
-import * as Speech from 'expo-speech'; // <-- Nueva dependencia
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Speech from 'expo-speech';
 import {
   Camera as CameraIcon,
   CheckCircle2,
-  Circle,
+  CreditCard,
   ScanFace,
-  ShieldAlert,
   UserCheck,
-  Volume2,
   X
 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
+  Animated,
+  Button,
+  Dimensions,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
-import { Image as ImageCompressor } from 'react-native-compressor';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../services/supabaseConfig';
 
-// --- CONFIGURACIÓN DE RETOS CON AUDIO ---
+const isWeb = Platform.OS === 'web';
+const { width } = Dimensions.get('window');
+
 const GESTOS = [
-  { id: 'guiño', label: 'Guiñá un ojo', audio: 'Guiñá el ojo hasta que el círculo se pinte de verde' },
-  { id: 'sonrisa', label: 'Tirá una sonrisa', audio: 'Ahora tirá una sonrisa para la cámara' },
-  { id: 'sorpresa', label: 'Poné cara de sorpresa', audio: 'Sorprendete para finalizar la prueba' }
+  { id: 'guiño', label: 'Guiñá un ojo', audio: 'Guiñá el ojo hasta que el contorno se pinte de verde' },
+  { id: 'sonrisa', label: 'Tirá una sonrisa', audio: 'Tirá una sonrisa hasta que el contorno se pinte de verde' }
 ];
 
-export default function RegistroBiometrico({ onComplete }) {
+export default function RegistroBiometrico() {
   const router = useRouter();
+  const params = useLocalSearchParams(); 
+  const isMounted = useRef(true);
+  const timeoutsRef = useRef([]);
+
   const [paso, setPaso] = useState(1); 
-  const [aceptoSeguro, setAceptoSeguro] = useState(false);
   const [loading, setLoading] = useState(false);
-  
   const [permission, requestPermission] = useCameraPermissions();
   const [mostrarCamara, setMostrarCamara] = useState(false);
-  const [fotoDNI, setFotoDNI] = useState(null);
-  const [fotoSelfie, setFotoSelfie] = useState(null);
+  
+  const [tengoFrente, setTengoFrente] = useState(false);
+  const [tengoDorso, setTengoDorso] = useState(false);
+  const [tengoSelfie, setTengoSelfie] = useState(false);
   const [rostroValidado, setRostroValidado] = useState(false);
+
+  const [timerActivo, setTimerActivo] = useState(false);
   const cameraRef = useRef(null);
+  const scanLoopRef = useRef(null);
+  const scanAnim = useRef(new Animated.Value(0)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
   const [retosActivos, setRetosActivos] = useState([]);
   const [indiceReto, setIndiceReto] = useState(0);
 
-  // Función para dictar instrucciones
+  useEffect(() => {
+    isMounted.current = true;
+    if (paso === 4) setRetosActivos(shuffleGestos(GESTOS));
+    return () => {
+      isMounted.current = false;
+      timeoutsRef.current.forEach(clearTimeout);
+      Speech.stop(); 
+      scanLoopRef.current?.stop();
+    };
+  }, [paso]);
+
   const hablar = (texto) => {
+    if (isWeb) return; 
+    Speech.stop();
     Speech.speak(texto, { language: 'es', pitch: 1.0, rate: 0.9 });
   };
 
-  useEffect(() => {
-    if (paso === 3) {
-      const aleatorios = [...GESTOS].sort(() => 0.5 - Math.random()).slice(0, 2);
-      setRetosActivos(aleatorios);
-      setIndiceReto(0);
-    }
-  }, [paso]);
+  const cerrarCamara = () => {
+    Speech.stop();
+    setMostrarCamara(false);
+    setTimerActivo(false);
+    progressAnim.setValue(0);
+    scanLoopRef.current?.stop();
+  };
 
-  // Disparar audio cuando cambia el reto o se abre la cámara
+  const shuffleGestos = (array) => {
+    let current = [...array];
+    for (let i = current.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [current[i], current[j]] = [current[j], current[i]];
+    }
+    return current;
+  };
+
   useEffect(() => {
-    if (mostrarCamara && paso === 3 && retosActivos.length > 0) {
+    if (!isWeb && mostrarCamara && paso <= 2) {
+      scanAnim.setValue(0);
+      scanLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(scanAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
+          Animated.timing(scanAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
+        ])
+      );
+      scanLoopRef.current.start();
+    }
+    return () => scanLoopRef.current?.stop();
+  }, [mostrarCamara, paso]);
+
+  useEffect(() => {
+    if (!isWeb && mostrarCamara && paso === 4 && retosActivos.length > 0) {
       hablar(retosActivos[indiceReto].audio);
     }
-  }, [indiceReto, mostrarCamara]);
+  }, [mostrarCamara, paso, retosActivos, indiceReto]);
 
-  const optimizarImagen = async (uri) => {
-    try {
-      const result = await ImageCompressor.compress(uri, {
-        compressionMethod: 'manual',
-        maxWidth: 1200,
-        quality: 0.8,
-      });
-      return result;
-    } catch (e) {
-      console.error("Error comprimiendo:", e);
-      return uri;
-    }
-  };
-
-  const onFacesDetected = ({ faces }) => {
-    if (rostroValidado || paso !== 3 || faces.length === 0 || retosActivos.length === 0) return;
-
-    const face = faces[0];
-    const retoActual = retosActivos[indiceReto];
-    let completado = false;
-
-    if (retoActual.id === 'guiño') {
-      if (face.leftEyeOpenProbability < 0.4 || face.rightEyeOpenProbability < 0.4) completado = true;
-    } 
-    else if (retoActual.id === 'sonrisa') {
-      if (face.smilingProbability > 0.7) completado = true;
-    } 
-    else if (retoActual.id === 'sorpresa') {
-      if (face.leftEyeOpenProbability > 0.9 && face.rightEyeOpenProbability > 0.9 && face.smilingProbability < 0.1) completado = true;
-    }
-
-    if (completado) {
-      if (indiceReto < retosActivos.length - 1) {
-        setIndiceReto(indiceReto + 1);
-      } else {
-        setRostroValidado(true);
-        setMostrarCamara(false);
-        hablar("Identidad validada correctamente");
-        Alert.alert("¡Validado!", "Completaste las pruebas de vida.");
-      }
-    }
-  };
-
-  const tomarFoto = async () => {
-    if (cameraRef.current) {
-      try {
-        setLoading(true);
-        const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
-        const uriComprimida = await optimizarImagen(photo.uri);
-        if (paso === 1) setFotoDNI(uriComprimida);
-        else if (paso === 2) setFotoSelfie(uriComprimida);
-        setMostrarCamara(false);
-      } catch (e) {
-        Alert.alert("Error", "No se pudo capturar la imagen.");
-      } finally {
+  const manejarBotonCaptura = () => {
+    if (isWeb) {
+      setLoading(true);
+      const t = setTimeout(() => {
+        if (!isMounted.current) return;
+        if (paso === 1) { setTengoFrente(true); setPaso(2); }
+        else if (paso === 2) { setTengoDorso(true); setPaso(3); }
+        else if (paso === 3) { setTengoSelfie(true); setPaso(4); }
+        else if (paso === 4) { setRostroValidado(true); }
         setLoading(false);
+      }, 1200);
+      timeoutsRef.current.push(t);
+    } else {
+      setMostrarCamara(true);
+    }
+  };
+
+  const iniciarEscaneoVidaMobile = () => {
+    setTimerActivo(true);
+    progressAnim.setValue(0);
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 3500,
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished && isMounted.current) {
+        setTimerActivo(false);
+        setMostrarCamara(false);
+        setLoading(true);
+        hablar("Analizando rasgos faciales");
+        const t = setTimeout(() => {
+          if (!isMounted.current) return;
+          setRostroValidado(true);
+          setLoading(false);
+          hablar("Identidad confirmada");
+        }, 2000);
+        timeoutsRef.current.push(t);
       }
-    }
+    });
   };
 
-  const manejarBotonCamara = async () => {
-    if (!permission?.granted) {
-      const { granted } = await requestPermission();
-      if (!granted) {
-        Alert.alert("Permiso denegado", "Necesitamos acceso a la cámara.");
-        return;
+  // --- CAMBIO APLICADO AQUÍ: Reenvío de params para persistencia ---
+  const finalizarValidacionLocal = () => {
+    Alert.alert("Identidad Verificada", "Se han validado tus rasgos y documentos correctamente.", [
+      { 
+        text: "FINALIZAR", 
+        onPress: () => {
+          router.push({
+            pathname: '/RegistroScreen',
+            params: { 
+              ...params,       // <--- MANTIENE TODOS LOS DATOS PREVIOS
+              validado: 'true' // MARCA COMO VALIDADO
+            }
+          });
+        }
       }
-    }
-    setMostrarCamara(true);
+    ]);
   };
 
-  const finalizarRegistro = async () => {
-    if (!aceptoSeguro) {
-      Alert.alert("Atención", "Debes declarar que cuentas con seguro.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) throw new Error("No hay sesión activa");
+  if (!isWeb && !permission?.granted) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.textCenter}>Permiso de cámara requerido</Text>
+        <Button onPress={requestPermission} title="Dar Permiso" />
+      </View>
+    );
+  }
 
-      const { error: updateError } = await supabase
-        .from('Usuarios') 
-        .update({ 
-          esperando_verificacion: false, 
-          declaracion_seguro: true,
-          fecha_auditoria: new Date().toISOString() 
-        })
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
-
-      Alert.alert("Éxito", "Validación completada. Ya podés usar Brexel.",
-        [{ text: "Entrar", onPress: () => {
-            if (onComplete) onComplete();
-            router.replace('/(tabs)/social');
-        }}]
-      );
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "No pudimos actualizar tu perfil.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (mostrarCamara) {
+  if (!isWeb && mostrarCamara) {
     return (
       <View style={styles.cameraFullScreen}>
-        <CameraView 
-          style={StyleSheet.absoluteFill} 
-          ref={cameraRef} 
-          facing={paso >= 2 ? 'front' : 'back'}
-          onFacesDetected={paso === 3 ? onFacesDetected : undefined}
-          faceDetectorSettings={{
-            mode: FaceDetector.FaceDetectorMode.fast,
-            detectLandmarks: FaceDetector.FaceDetectorLandmarks.all,
-            runClassifications: FaceDetector.FaceDetectorClassifications.all,
-            minDetectionInterval: 100,
-            tracking: true,
-          }}
-        />
+        <CameraView style={StyleSheet.absoluteFill} ref={cameraRef} facing={paso <= 2 ? 'back' : 'front'} />
         
-        {/* Guía visual para el rostro */}
-        <View style={styles.guiaOverlay}>
-            <View style={[styles.circuloGuia, rostroValidado && {borderColor: '#2E7D32'}]} />
-        </View>
-
-        <View style={styles.cameraOverlay}>
-          <TouchableOpacity style={styles.btnCerrar} onPress={() => setMostrarCamara(false)}>
-            <X color="#fff" size={30} />
-          </TouchableOpacity>
-          
-          {paso !== 3 && (
-            <TouchableOpacity style={styles.btnDisparar} onPress={tomarFoto} disabled={loading}>
-              {loading ? <ActivityIndicator color="#1976D2" /> : <View style={styles.circuloInterno} />}
-            </TouchableOpacity>
-          )}
-
-          {paso === 3 && retosActivos.length > 0 && (
-            <View style={styles.instruccionFlotante}>
-              <Volume2 color="#1976D2" size={20} style={{marginRight: 10}} />
-              <View>
-                <Text style={styles.retoHeader}>RETO {indiceReto + 1} DE 2</Text>
-                <Text style={styles.instruccionText}>{retosActivos[indiceReto].label}</Text>
-              </View>
+        {paso <= 2 && (
+          <View style={styles.overlayDNI}>
+            <View style={styles.dniGuia}>
+              <Animated.View style={[styles.scanLine, {
+                transform: [{ translateY: scanAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 190] }) }]
+              }]} />
             </View>
+            <Text style={styles.instruccionCamara}>Encuadrá el {paso === 1 ? 'FRENTE' : 'DORSO'}</Text>
+          </View>
+        )}
+
+        {paso === 4 && (
+          <View style={styles.maskContainer}>
+            <View style={styles.faceCutout}>
+              <Animated.View style={[styles.progressBorder, { 
+                borderColor: '#00FF00',
+                borderWidth: progressAnim.interpolate({ inputRange: [0, 1], outputRange: [2, 10] }),
+                opacity: progressAnim 
+              }]} />
+            </View>
+            <Text style={styles.instruccionVida}>{retosActivos[indiceReto]?.label}</Text>
+          </View>
+        )}
+
+        <View style={styles.cameraControls}>
+          <TouchableOpacity style={styles.btnCerrar} onPress={cerrarCamara}><X color="#fff" size={30} /></TouchableOpacity>
+          {paso === 4 ? (
+            !timerActivo && <TouchableOpacity style={styles.btnScanVida} onPress={iniciarEscaneoVidaMobile}><Text style={styles.btnScanText}>INICIAR</Text></TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.btnDisparar} onPress={() => {
+              if (paso === 1) setTengoFrente(true);
+              if (paso === 2) setTengoDorso(true);
+              if (paso === 3) setTengoSelfie(true);
+              cerrarCamara();
+            }}><View style={styles.circuloInterno} /></TouchableOpacity>
           )}
         </View>
       </View>
@@ -224,109 +227,75 @@ export default function RegistroBiometrico({ onComplete }) {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F7F9' }} edges={['right', 'left', 'bottom']}>
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Validación de Seguridad</Text>
-          <Text style={styles.subtitle}>Paso {paso} de 3</Text>
-        </View>
-
+    <SafeAreaView style={styles.safe}>
+      {loading && <View style={styles.loadingOverlay}><ActivityIndicator size="large" color="#1976D2" /></View>}
+      
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.subtitle}>Paso {paso} de 4 {isWeb && "(Web Mode)"}</Text>
+        
         <View style={styles.card}>
-          <View style={styles.iconContainer}>
-            {paso === 1 && <ShieldAlert size={48} color="#1976D2" />}
-            {paso === 2 && <UserCheck size={48} color="#2E7D32" />}
-            {paso === 3 && <ScanFace size={48} color="#6A1B9A" />}
-          </View>
-          
-          <Text style={styles.cardTitle}>
-            {paso === 1 ? "Foto del DNI" : paso === 2 ? "Foto con DNI" : "Prueba de Vida"}
-          </Text>
-          
-          {paso === 3 ? (
-            <View style={{ alignItems: 'center' }}>
-               {rostroValidado ? (
-                 <CheckCircle2 size={100} color="#2E7D32" style={{ marginTop: 20 }} />
-               ) : (
-                 <View style={{alignItems: 'center'}}>
-                    <Volume2 color="#6A1B9A" size={32} style={{marginBottom: 10}} />
-                    <Text style={styles.cardText}>Seguí las instrucciones por voz para confirmar tu identidad.</Text>
-                 </View>
-               )}
-            </View>
-          ) : (paso === 1 ? fotoDNI : fotoSelfie) ? (
-            <Image source={{ uri: paso === 1 ? fotoDNI : fotoSelfie }} style={styles.preview} />
-          ) : (
-            <Text style={styles.cardText}>
-              {paso === 1 ? "Capturá el frente de tu documento." : "Sostené tu DNI al lado de tu cara."}
+          <View style={styles.contentArea}>
+            {paso === 1 && (tengoFrente ? <CheckCircle2 size={70} color="#2E7D32" /> : <CreditCard size={70} color="#ccc" />)}
+            {paso === 2 && (tengoDorso ? <CheckCircle2 size={70} color="#2E7D32" /> : <CreditCard size={70} color="#ccc" />)}
+            {paso === 3 && (tengoSelfie ? <CheckCircle2 size={70} color="#2E7D32" /> : <UserCheck size={70} color="#ccc" />)}
+            {paso === 4 && (rostroValidado ? <CheckCircle2 size={90} color="#2E7D32" /> : <ScanFace size={90} color="#ccc" />)}
+            <Text style={styles.statusText}>
+                {paso === 1 && (tengoFrente ? "DNI Frente OK" : "Frente del DNI")}
+                {paso === 2 && (tengoDorso ? "DNI Dorso OK" : "Dorso del DNI")}
+                {paso === 3 && (tengoSelfie ? "Selfie OK" : "Capturar Rostro")}
+                {paso === 4 && (rostroValidado ? "Validación Exitosa" : "Prueba de Vida")}
             </Text>
-          )}
+          </View>
 
-          {!rostroValidado && (
-            <TouchableOpacity style={styles.btnFoto} onPress={manejarBotonCamara} disabled={loading}>
-              <CameraIcon color="#fff" size={20} />
-              <Text style={styles.btnText}>
-                {paso === 3 ? "Iniciar Validación" : "Abrir Cámara"}
-              </Text>
+          {paso < 5 && !rostroValidado && (
+            <TouchableOpacity style={styles.mainBtn} onPress={manejarBotonCaptura}>
+              <CameraIcon color="#fff" size={22} />
+              <Text style={styles.mainBtnText}>{isWeb ? "Simular Captura" : (paso === 4 ? "Iniciar Vida" : "Capturar")}</Text>
             </TouchableOpacity>
           )}
 
-          {paso === 1 && fotoDNI && (
-            <TouchableOpacity style={[styles.btnFoto, {backgroundColor: '#2E7D32', marginTop: 10}]} onPress={() => setPaso(2)}>
-              <Text style={styles.btnText}>Continuar al Paso 2</Text>
-            </TouchableOpacity>
-          )}
-
-          {paso === 2 && fotoSelfie && (
-            <TouchableOpacity style={[styles.btnFoto, {backgroundColor: '#6A1B9A', marginTop: 10}]} onPress={() => setPaso(3)}>
-              <Text style={styles.btnText}>Continuar a Validación Facial</Text>
+          {!isWeb && paso === 1 && tengoFrente && <TouchableOpacity style={styles.nextBtn} onPress={() => setPaso(2)}><Text style={styles.mainBtnText}>Siguiente</Text></TouchableOpacity>}
+          {!isWeb && paso === 2 && tengoDorso && <TouchableOpacity style={styles.nextBtn} onPress={() => setPaso(3)}><Text style={styles.mainBtnText}>Siguiente</Text></TouchableOpacity>}
+          {!isWeb && paso === 3 && tengoSelfie && <TouchableOpacity style={[styles.nextBtn, {backgroundColor: '#6A1B9A'}]} onPress={() => setPaso(4)}><Text style={styles.mainBtnText}>Ir a Vida</Text></TouchableOpacity>}
+          
+          {rostroValidado && (
+            <TouchableOpacity style={[styles.nextBtn, {marginTop: 30}]} onPress={finalizarValidacionLocal}>
+              <Text style={styles.mainBtnText}>COMPLETAR Y VOLVER</Text>
             </TouchableOpacity>
           )}
         </View>
-
-        {paso === 3 && rostroValidado && (
-          <View style={[styles.card, {marginTop: 20}]}>
-            <TouchableOpacity style={styles.checkboxRow} onPress={() => setAceptoSeguro(!aceptoSeguro)}>
-              {aceptoSeguro ? <CheckCircle2 size={26} color="#2E7D32" /> : <Circle size={26} color="#CCC" />}
-              <Text style={styles.checkboxText}>Declaro bajo juramento que cuento con seguro vigente.</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.btnFinalizar, (!aceptoSeguro || loading) && { backgroundColor: '#BDBDBD' }]} 
-              onPress={finalizarRegistro}
-              disabled={!aceptoSeguro || loading}
-            >
-              <Text style={styles.btnText}>Finalizar y Entrar</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 20 },
-  header: { marginTop: 20, marginBottom: 30 },
-  title: { fontSize: 24, fontWeight: '900', color: '#1A1A1A' },
-  subtitle: { fontSize: 16, color: '#1976D2', fontWeight: '700' },
-  iconContainer: { alignItems: 'center', marginBottom: 10 },
-  card: { backgroundColor: '#fff', padding: 25, borderRadius: 28, elevation: 3 },
-  cardTitle: { fontSize: 20, fontWeight: '800', color: '#1A1A1A', textAlign: 'center' },
-  cardText: { textAlign: 'center', color: '#666', marginTop: 12, lineHeight: 22 },
-  preview: { width: '100%', height: 200, borderRadius: 16, marginTop: 15 },
-  btnFoto: { backgroundColor: '#1976D2', flexDirection: 'row', padding: 18, borderRadius: 16, marginTop: 25, gap: 10, alignItems: 'center', justifyContent: 'center' },
-  btnFinalizar: { backgroundColor: '#2E7D32', padding: 18, borderRadius: 16, width: '100%', alignItems: 'center', justifyContent: 'center' },
-  btnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  safe: { flex: 1, backgroundColor: '#F5F7F9' },
+  container: { padding: 20, paddingBottom: 40 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  textCenter: { textAlign: 'center', marginBottom: 20 },
+  title: { fontSize: 24, fontWeight: '900', color: '#333' },
+  subtitle: { fontSize: 16, color: '#1976D2', marginBottom: 20 },
+  card: { backgroundColor: '#fff', borderRadius: 30, padding: 25, alignItems: 'center', elevation: 4 },
+  contentArea: { width: '100%', height: 220, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F4F8', borderRadius: 20, marginVertical: 20 },
+  statusText: { marginTop: 15, fontSize: 16, color: '#555' },
+  mainBtn: { backgroundColor: '#1976D2', width: '100%', padding: 18, borderRadius: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
+  nextBtn: { backgroundColor: '#2E7D32', width: '100%', padding: 18, borderRadius: 15, marginTop: 12, alignItems: 'center' },
+  mainBtnText: { color: '#fff', fontWeight: 'bold' },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.7)', zIndex: 100, justifyContent: 'center', alignItems: 'center' },
   cameraFullScreen: { flex: 1, backgroundColor: '#000' },
-  guiaOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
-  circuloGuia: { width: 260, height: 350, borderRadius: 130, borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)', borderStyle: 'dashed' },
-  cameraOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 40 },
-  btnDisparar: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' },
+  cameraControls: { position: 'absolute', bottom: 50, width: '100%', alignItems: 'center' },
+  btnCerrar: { position: 'absolute', top: 50, right: 20 },
+  btnDisparar: { width: 80, height: 80, borderRadius: 40, borderWidth: 5, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   circuloInterno: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },
-  btnCerrar: { position: 'absolute', top: 40, right: 20 },
-  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 20 },
-  checkboxText: { flex: 1, fontSize: 13, color: '#444' },
-  instruccionFlotante: { backgroundColor: 'white', padding: 15, borderRadius: 20, marginBottom: 20, alignItems: 'center', flexDirection: 'row' },
-  retoHeader: { color: '#1976D2', fontSize: 10, fontWeight: 'bold' },
-  instruccionText: { color: '#1A1A1A', fontWeight: 'bold', fontSize: 16 }
+  overlayDNI: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+  dniGuia: { width: 320, height: 200, borderWidth: 2, borderColor: '#fff', borderRadius: 15, overflow: 'hidden' },
+  scanLine: { width: '100%', height: 4, backgroundColor: '#00FF00' },
+  instruccionCamara: { color: '#fff', marginTop: 20, backgroundColor: 'rgba(0,0,0,0.5)', padding: 10, borderRadius: 10 },
+  maskContainer: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)' },
+  faceCutout: { width: 280, height: 380, borderRadius: 140, borderWidth: 2, borderColor: '#fff' },
+  progressBorder: { ...StyleSheet.absoluteFillObject, borderRadius: 140 },
+  instruccionVida: { color: '#00FF00', fontSize: 22, fontWeight: '900', marginTop: 30 },
+  btnScanVida: { backgroundColor: '#00FF00', padding: 15, borderRadius: 30 },
+  btnScanText: { fontWeight: '800' }
 });

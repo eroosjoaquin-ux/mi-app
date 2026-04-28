@@ -17,6 +17,11 @@
         "backgroundColor": "#1e3a8a"
       },
       "package": "com.eros.brexel",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDzYr8brTmhl-QdGzN15MENokN2YS4z7Uw"
+        }
+      },
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

@@ -1,5 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import {
@@ -21,19 +19,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+// --- ARREGLADO: Subimos dos niveles para llegar a services ---
+import { supabase } from '../../services/supabaseConfig';
+
 const { width, height } = Dimensions.get('window');
-
-const supabaseUrl = 'https://kqittlmnkvdaaualuswr.supabase.co';
-const supabaseAnonKey = 'sb_publishable_2Z4BPTVd0qIu4npa-sNjWw_IJ5QqqD_';
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-});
 
 const NEUTRAL = { white: '#FFFFFF', dark: '#1A1A1A', gray: '#666666', lightGray: '#F5F7F9', border: '#E1E4E8' };
 const BRAND = { primary: '#1976D2', success: '#2E7D32', warning: '#ED6C02', danger: '#D32F2F' };
@@ -47,9 +36,10 @@ export default function PerfilScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMetricasVisible, setModalMetricasVisible] = useState(false); 
   const [nuevoNombre, setNuevoNombre] = useState('');
-
-  // ESTADO PARA EL RADIO DE COBERTURA
+  
+  // --- ALINEADO CON REGISTRO Y MAPA ---
   const [radioCobertura, setRadioCobertura] = useState(0);
+  const [nombreZona, setNombreZona] = useState('No especificada');
 
   const [stats, setStats] = useState({
     trabajos: 0,
@@ -62,7 +52,6 @@ export default function PerfilScreen() {
     bio: 'Comprometido con la calidad y la puntualidad. Especialista en soluciones técnicas para el hogar y comercio.',
     verificado: false,
     antiguedad: 'Nuevo',
-    zonaNombre: 'San Vicente', // Nombre base
   };
 
   useEffect(() => {
@@ -78,13 +67,14 @@ export default function PerfilScreen() {
       setNuevoNombre(nombreRespaldo);
 
       try {
-        // AGREGAMOS 'radio' A LA CONSULTA SELECT
         const { data, error } = await supabase
           .from('Usuarios')
-          .select('nombre, avatar_url, puntos_calificacion, trabajos_completados, radio')
+          .select('nombre, avatar_url, reputacion, trabajos, radio_alcance_km, zona_residencial') // ALINEADO: Nombres de columnas correctos
           .eq('id', session.user.id)
           .single();
         
+        if (error) throw error;
+
         if (data) {
           if (data.nombre) {
             setUserData(data);
@@ -92,14 +82,15 @@ export default function PerfilScreen() {
           }
           if (data.avatar_url) setFotoPerfil(data.avatar_url);
           
-          // GUARDAMOS EL RADIO DEL REGISTRO
-          if (data.radio) setRadioCobertura(data.radio);
+          // ALINEADO: Seteo de variables de mapa
+          if (data.radio_alcance_km) setRadioCobertura(data.radio_alcance_km);
+          if (data.zona_residencial) setNombreZona(data.zona_residencial); 
           
-          const ratingReal = data.puntos_calificacion || 0;
+          const reputacionValor = data.reputacion || 0; 
           setStats({
-            trabajos: data.trabajos_completados || 0,
-            rating: ratingReal.toFixed(1),
-            reputacion: Math.round(ratingReal * 20)
+            trabajos: data.trabajos || 0,
+            rating: Number(reputacionValor).toFixed(1),
+            reputacion: Math.round(reputacionValor * 20)
           });
         }
       } catch (e) {
@@ -201,7 +192,6 @@ export default function PerfilScreen() {
   return (
     <View style={styles.container}>
       
-      {/* --- MODAL DE EDICIÓN NOMBRE --- */}
       <Modal visible={modalVisible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -224,7 +214,6 @@ export default function PerfilScreen() {
         </View>
       </Modal>
 
-      {/* --- MODAL DE MÉTRICAS --- */}
       <Modal visible={modalMetricasVisible} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -278,11 +267,10 @@ export default function PerfilScreen() {
             <Text style={styles.userName}>{userData?.nombre || "Cargando..."}</Text>
             <Text style={styles.userSpec}>{perfilInfo.especialidad}</Text>
             
-            {/* BADGE DE UBICACIÓN ACTUALIZADO CON RADIO */}
             <View style={styles.locationBadge}>
               <MapPin size={14} color={BRAND.primary} />
               <Text style={styles.locationBadgeText}>
-                Área de trabajo: {radioCobertura}km ({perfilInfo.zonaNombre})
+                Área de trabajo: {radioCobertura}km ({nombreZona})
               </Text>
             </View>
           </View>
@@ -314,10 +302,10 @@ export default function PerfilScreen() {
             <View style={styles.divider} />
             <View style={styles.statBox}>
               <Text style={styles.statValue}>{stats.rating}</Text>
-              <div style={styles.ratingRow}>
+              <View style={styles.ratingRow}>
                 <Star size={10} color={BRAND.warning} fill={BRAND.warning} />
                 <Text style={styles.statLabel}>Rating</Text>
-              </div>
+              </View>
             </View>
             <View style={styles.divider} />
             <View style={styles.statBox}>
@@ -362,6 +350,7 @@ export default function PerfilScreen() {
   );
 }
 
+// ... (estilos permanecen idénticos para no cambiar ni un espacio del diseño)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: NEUTRAL.lightGray },
   header: { height: height * 0.22, width: '100%' },

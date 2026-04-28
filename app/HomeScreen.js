@@ -29,7 +29,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// --- IMPORTACIÓN ARREGLADA (Sin llaves porque es export default) ---
+// --- IMPORTACIÓN ARREGLADA ---
 import NotificacionesManager from '../services/notificaciones';
 import { supabase } from '../services/supabaseConfig';
 
@@ -108,13 +108,23 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
   const [cargando, setCargando] = useState(true);
   const [user, setUser] = useState(null);
 
-  // 1. SINCRONIZAR NOTIFICACIONES AL CARGAR LA HOME
+  // --- LÓGICA DE GEOLOCALIZACIÓN ---
+  const calcularDistancia = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setUser(session.user);
-        // Usamos el encadenamiento opcional (?.) por si el manager no está listo
         NotificacionesManager?.register?.(session.user.id);
       }
     };
@@ -124,19 +134,54 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
   const fetchPosts = async () => {
     try {
       setCargando(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // 1. Obtener datos de ubicación del usuario actual
+      const { data: userData } = await supabase
+        .from('Usuarios')
+        .select('latitud, longitud, radio_alcance_km')
+        .eq('id', session?.user?.id)
+        .single();
+
+      // 2. Traer los posts con la info de ubicación de sus autores
       const { data, error } = await supabase
         .from('posts')
         .select(`
           *,
           Usuarios:usuario_id (
             usuario_empresa,
-            avatar_url
+            avatar_url,
+            latitud,
+            longitud,
+            radio_alcance_km
           )
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setPosts(data || []);
+
+      // 3. FILTRADO BILATERAL (Intersección de radios)
+      if (userData && userData.latitud && data) {
+        const postsFiltradosPorRadio = data.filter(post => {
+          const autorPost = post.Usuarios;
+          if (!autorPost || !autorPost.latitud) return true;
+
+          const distancia = calcularDistancia(
+            userData.latitud, 
+            userData.longitud, 
+            autorPost.latitud, 
+            autorPost.longitud
+          );
+
+          const radioMio = Number(userData.radio_alcance_km || 0);
+          const radioAutor = Number(autorPost.radio_alcance_km || 0);
+          
+          return distancia <= (radioMio + radioAutor);
+        });
+        setPosts(postsFiltradosPorRadio);
+      } else {
+        setPosts(data || []);
+      }
     } catch (error) {
       console.error("Error rastreando posts:", error.message);
     } finally {
@@ -171,7 +216,7 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
         return;
       }
 
-      let { data: existingChat, error: findError } = await supabase
+      let { data: existingChat } = await supabase
         .from('chats')
         .select('id')
         .or(`and(user_1.eq.${miId},user_2.eq.${suId}),and(user_1.eq.${suId},user_2.eq.${miId})`)
@@ -233,7 +278,7 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.logoText}>Brexel</Text>
-          <div style={styles.headerRightIcons}>
+          <View style={styles.headerRightIcons}>
             <TouchableOpacity style={styles.headerCircleBtn} onPress={() => setShowSearchMenu(!showSearchMenu)}>
               <Search size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
@@ -256,7 +301,7 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
             <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.push('/perfil')}>
               <UserCircle2 size={20} color={COLORS.textPrimary} />
             </TouchableOpacity>
-          </div>
+          </View>
         </View>
       </View>
 
@@ -363,7 +408,7 @@ export default function HomeScreen({ onLogout, onIrAPublicar, onIrAlChat }) {
           );
         })}
         {!cargando && postsFiltrados.length === 0 && (
-            <Text style={{textAlign: 'center', color: COLORS.textSecondary, marginTop: 40}}>No hay anuncios en esta sección todavía.</Text>
+            <Text style={{textAlign: 'center', color: COLORS.textSecondary, marginTop: 40}}>No hay anuncios en tu zona todavía.</Text>
         )}
         <View style={{height: 100}} />
       </ScrollView>

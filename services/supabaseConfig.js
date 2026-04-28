@@ -6,32 +6,32 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 /**
  * Custom Storage Wrapper
- * Esto soluciona el error "AsyncStorage is null" al no llamar 
- * directamente al módulo hasta que sea necesario.
+ * Ajustado para garantizar que la persistencia sea atómica y 
+ * compatible con la política de sesión eterna.
  */
 const ExpoSqliteStorage = {
-  getItem: async (key) => {
-    return await AsyncStorage.getItem(key);
+  getItem: (key) => {
+    return AsyncStorage.getItem(key);
   },
-  setItem: async (key, value) => {
-    await AsyncStorage.setItem(key, value);
+  setItem: (key, value) => {
+    return AsyncStorage.setItem(key, value);
   },
-  removeItem: async (key) => {
-    await AsyncStorage.removeItem(key);
+  removeItem: (key) => {
+    return AsyncStorage.removeItem(key);
   },
 };
 
 // Configuración optimizada y blindada
-// Se agregaron headers globales para asegurar que la API Key siempre viaje
+// Se mantiene la persistencia activa para que el RootLayout pueda leer la sesión al arrancar
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: ExpoSqliteStorage,
     autoRefreshToken: true,
-    persistSession: true,
+    persistSession: true, // Crucial para que no se olvide de la sesión
     detectSessionInUrl: false, 
   },
   global: {
-    headers: { 'apikey': supabaseAnonKey }, // Esto fuerza la llave en cada llamada
+    headers: { 'apikey': supabaseAnonKey }, 
   },
 });
 
