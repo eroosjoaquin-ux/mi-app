@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "690892115334",
+    "project_id": "brexel-notificaciones",
+    "storage_bucket": "brexel-notificaciones.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:690892115334:android:1eed11c5b0812ea7da3007",
+        "android_client_info": {
+          "package_name": "Brexel.Paquete_firebase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDv676W66LVYCcwL8EMqUgtoSbTr3IGc-8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:690892115334:android:e6ab321eb241d378da3007",
+        "android_client_info": {
+          "package_name": "com.erosjoaquin.brexel"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDv676W66LVYCcwL8EMqUgtoSbTr3IGc-8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

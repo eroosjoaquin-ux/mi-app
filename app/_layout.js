@@ -1,10 +1,8 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
-import { supabase } from '../services/supabaseConfig';
-
-// --- IMPORTACIÓN DEL MANAGER ---
+import { ActivityIndicator, BackHandler, View } from 'react-native';
 import NotificacionesManager from '../services/notificaciones';
+import { supabase } from '../services/supabaseConfig';
 
 export default function RootLayout() {
   const segments = useSegments();
@@ -14,16 +12,28 @@ export default function RootLayout() {
   const [isVerificado, setIsVerificado] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // 1. EL DESPERTADOR: Inicializa ruidos y ruteo de notificaciones
+  // NUEVO: BLOQUEO DEL BOTÓN ATRÁS EN PANTALLAS PROTEGIDAS
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      const rootSegment = segments[0];
+      // Si está en Home o en tabs, bloqueamos el botón atrás
+      if (rootSegment === 'HomeScreen' || rootSegment === '(tabs)') {
+        return true; // true = bloquea, no hace nada
+      }
+      return false; // false = comportamiento normal
+    });
+    return () => backHandler.remove();
+  }, [segments]);
+
+  // 1. EL DESPERTADOR
   useEffect(() => {
     if (NotificacionesManager?.init) {
-      // Pasamos el router para que el manager sepa cómo navegar al clickear
       const subscription = NotificacionesManager.init(router);
       return () => subscription?.remove();
     }
   }, []);
 
-  // 2. REGISTRAR PUSH TOKEN (Solo cuando el usuario está listo)
+  // 2. REGISTRAR PUSH TOKEN
   useEffect(() => {
     if (session?.user && isVerificado && NotificacionesManager?.register) {
       NotificacionesManager.register(session.user.id);
@@ -100,7 +110,7 @@ export default function RootLayout() {
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
       <Stack.Screen name="index" /> 
-      <Stack.Screen name="HomeScreen" />
+      <Stack.Screen name="HomeScreen/index" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="LoginScreen" options={{ gestureEnabled: false }} />
       <Stack.Screen name="RegistroScreen" options={{ headerShown: true, title: 'Crear Cuenta' }} />

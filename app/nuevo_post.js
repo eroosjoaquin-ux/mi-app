@@ -6,8 +6,7 @@ import {
     CheckCircle2,
     ChevronRight,
     Coffee, Coins,
-    DollarSign, MapPin,
-    Navigation,
+    DollarSign,
     Truck,
     Users, X
 } from 'lucide-react-native';
@@ -27,8 +26,6 @@ import {
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-// IMPORTACIÓN DE SUPABASE
 import { supabase } from '../services/supabaseConfig';
 
 const COLORS = {
@@ -44,13 +41,13 @@ const COLORS = {
 };
 
 const RUBROS = [
-    'Albañilería', 'Carpintería', 'Cerrajería', 'Climatización y Refrigeración', 
-    'Construcción Seco/Tradicional', 'Electricidad Domiciliaria e Industrial', 
-    'Fletes y Mudanzas', 'Gasista y Plomería', 'Herrería y Soldadura', 
-    'Jardinería y Paisajismo', 'Limpieza y Mantenimiento', 'Mecánica (Autos/Motos)',
-    'Pintura y Revestimientos', 'Programación y Tecnología', 'Seguridad (Cámaras/Alarmas)',
-    'Servicio Técnico Electrodomésticos', 'Tapicería y Restauración',
-    'Techista e Impermeabilización', 'Vidriería y Aberturas'
+  'Albañilería', 'Carpintería', 'Cerrajería', 'Climatización y Refrigeración',
+  'Construcción Seco/Tradicional', 'Electricidad Domiciliaria',
+  'Fletes y Mudanzas', 'Gasista y Plomería', 'Herrería y Soldadura',
+  'Jardinería y Paisajismo', 'Limpieza y Mantenimiento', 'Mecánica (Autos/Motos)',
+  'Pintura y Revestimientos', 'Programación y Tecnología', 'Seguridad (Cámaras/Alarmas)',
+  'Servicio Técnico Electrodomésticos', 'Tapicería y Restauración',
+  'Techista e Impermeabilización', 'Vidriería y Aberturas'
 ].sort();
 
 export default function nuevo_post({ onSuccess }) {
@@ -59,14 +56,12 @@ export default function nuevo_post({ onSuccess }) {
     const [tipo, setTipo] = useState('oferta'); 
     const [titulo, setTitulo] = useState('');
     const [rubro, setRubro] = useState('');
-    const [zona, setZona] = useState('');
     const [presupuesto, setPresupuesto] = useState('');
     const [descripcion, setDescripcion] = useState('');
     const [esUrgente, setEsUrgente] = useState(false);
     const [opciones, setOpciones] = useState({});
     const [modalVisible, setModalVisible] = useState(false);
     const [cargando, setCargando] = useState(false);
-    
     const [imagenes, setImagenes] = useState([]);
 
     const pickImage = async () => {
@@ -74,14 +69,12 @@ export default function nuevo_post({ onSuccess }) {
             Alert.alert("Límite alcanzado", "Puedes subir un máximo de 4 fotos.");
             return;
         }
-
         let result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images'], 
             allowsEditing: true,
             aspect: [4, 3],
             quality: 1,
         });
-
         if (!result.canceled) {
             setImagenes([...imagenes, result.assets[0].uri]);
         }
@@ -109,52 +102,52 @@ export default function nuevo_post({ onSuccess }) {
         setCargando(true);
         try {
             const { data: { user }, error: userError } = await supabase.auth.getUser();
-            
-            if (userError || !user) {
-                throw new Error("Debes estar iniciado sesión para publicar.");
-            }
+            if (userError || !user) throw new Error("Debes estar iniciado sesión para publicar.");
+
+            // Traer ubicación y zona del perfil del usuario
+            const { data: perfil } = await supabase
+                .from('Usuarios')
+                .select('latitud, longitud, zona_residencial, radio_alcance_km, usuario_empresa, nombre')
+                .eq('id', user.id)
+                .single();
 
             const { error } = await supabase
                 .from('posts')
-                .insert([
-                    {
-                        usuario_id : user.id,
-                        tipo: tipo,
-                        titulo: titulo,
-                        rubro: rubro,
-                        zona: zona, 
-                        presupuesto: presupuesto ? parseFloat(presupuesto) : 0,
-                        es_urgente: esUrgente,
-                        descripcion: descripcion,
-                        opciones: opciones,
-                        userName: "Eros Joaquín", 
-                        userPhoto: 'https://randomuser.me/api/portraits/men/32.jpg',
-                        postPhoto: imagenes.length > 0 ? imagenes[0] : null,
-                        reputacion: 100,
-                        verificado: true,
-                        likes: 0,
-                        comments: 0
-                    }
-                ]);
+                .insert([{
+                    usuario_id: user.id,
+                    tipo: tipo,
+                    titulo: titulo,
+                    rubro: rubro,
+                    zona: perfil?.zona_residencial || 'Sin zona',
+                    latitud: perfil?.latitud || null,
+                    longitud: perfil?.longitud || null,
+                    radio_alcance_km: perfil?.radio_alcance_km || 5,
+                    presupuesto: presupuesto ? parseFloat(presupuesto) : null,
+                    es_urgente: esUrgente,
+                    descripcion: descripcion,
+                    opciones: opciones,
+                    postPhoto: imagenes.length > 0 ? imagenes[0] : null,
+                    reputacion: 100,
+                    verificado: true,
+                    likes: 0,
+                    comments: 0
+                }]);
 
             if (error) throw error;
 
-            // CONFIGURACIÓN PARA REDIRECCIONAR AL TOCAR "OK"
             Alert.alert(
                 "¡Éxito!", 
                 "Tu anuncio ha sido publicado correctamente.",
-                [
-                    { 
-                        text: "OK", 
-                        onPress: () => {
-                            if (onSuccess) {
-                                onSuccess(); // Ejecuta el cierre en index.js
-                            } else {
-                                router.replace('/'); // Backup por si falla la prop
-                            }
-                        } 
-                    }
-                ],
+                [{ 
+                    text: "OK", 
+                    onPress: () => {
+                        if (onSuccess) {
+                            onSuccess();
+                        } else {
+                            router.replace('/HomeScreen');
+                        }
+                    } 
+                }],
                 { cancelable: false }
             );
             
@@ -273,32 +266,17 @@ export default function nuevo_post({ onSuccess }) {
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.rowInputs}>
-                        <View style={{flex: 1}}>
-                            <Text style={styles.label}>Zona de labor</Text>
-                            <View style={styles.inputIconContainer}>
-                                <MapPin size={16} color={COLORS.primary} />
-                                <TextInput 
-                                    style={styles.inputIcon} 
-                                    placeholder="Ej: A. Korn" 
-                                    value={zona}
-                                    onChangeText={setZona}
-                                />
-                                <TouchableOpacity><Navigation size={16} color={COLORS.primary} /></TouchableOpacity>
-                            </View>
-                        </View>
-                        <View style={{flex: 1}}>
-                            <Text style={styles.label}>Presupuesto</Text>
-                            <View style={styles.inputIconContainer}>
-                                <DollarSign size={16} color={COLORS.success} />
-                                <TextInput 
-                                    style={styles.inputIcon} 
-                                    placeholder="0.00" 
-                                    keyboardType="numeric" 
-                                    value={presupuesto}
-                                    onChangeText={setPresupuesto}
-                                />
-                            </View>
+                    <View style={styles.section}>
+                        <Text style={styles.label}>Presupuesto <Text style={styles.labelOpcional}>(Opcional)</Text></Text>
+                        <View style={styles.inputIconContainer}>
+                            <DollarSign size={16} color={COLORS.success} />
+                            <TextInput 
+                                style={styles.inputIcon} 
+                                placeholder="Dejá vacío si preferís no indicarlo" 
+                                keyboardType="numeric" 
+                                value={presupuesto}
+                                onChangeText={setPresupuesto}
+                            />
                         </View>
                     </View>
 
@@ -378,6 +356,7 @@ const styles = StyleSheet.create({
     scroll: { padding: 20 },
     section: { marginBottom: 22 },
     label: { fontSize: 11, fontWeight: '800', color: COLORS.text, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 },
+    labelOpcional: { fontSize: 10, fontWeight: '500', color: COLORS.textSec, textTransform: 'none', letterSpacing: 0 },
     urgentCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg, padding: 15, borderRadius: 16, marginBottom: 25, borderWidth: 1, borderColor: COLORS.border },
     urgentCardActive: { borderColor: COLORS.urgent, backgroundColor: '#FFF5F5' },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
@@ -391,7 +370,6 @@ const styles = StyleSheet.create({
     input: { backgroundColor: COLORS.bg, borderRadius: 12, padding: 16, fontSize: 15, color: COLORS.text, borderWidth: 1, borderColor: COLORS.border },
     selectorBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.bg, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: COLORS.border },
     selectorText: { color: COLORS.textSec, fontSize: 15, fontWeight: '500' },
-    rowInputs: { flexDirection: 'row', gap: 12, marginBottom: 22 },
     inputIconContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.bg, borderRadius: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border },
     inputIcon: { flex: 1, paddingVertical: 14, marginLeft: 8, fontSize: 15, color: COLORS.text },
     checkGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

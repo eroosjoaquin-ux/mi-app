@@ -2,224 +2,174 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CheckCircle, ChevronLeft, Clock, Plus, Send, ShieldAlert, XCircle } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  BackHandler,
-  FlatList,
-  Image,
+  Alert, BackHandler, FlatList, Image,
   KeyboardAvoidingView, Platform,
   StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// --- IMPORTACIONES LIMPIAS ---
-import { NotificacionesManager } from '../../../services/notificaciones';
+import NotificacionesManager from '../../../services/notificaciones';
+import { getNombreMostrar } from '../../../services/nombreUsuario';
 import { supabase } from '../../../services/supabaseConfig';
 
 const COLORS = {
-  primary: '#1976D2',
-  bg: '#F0F2F5',
-  white: '#FFFFFF',
-  text: '#1A1A1A',
-  textSec: '#65676B',
-  border: '#E4E6EB',
-  success: '#2E7D32',
-  danger: '#D32F2F',
-  warning: '#ED6C02',
+  primary: '#1976D2', bg: '#F0F2F5', white: '#FFFFFF',
+  text: '#1A1A1A', textSec: '#65676B', border: '#E4E6EB',
+  success: '#2E7D32', danger: '#D32F2F', warning: '#ED6C02',
 };
 
 export default function ChatScreen({ chat, onBack, session }) {
-  const router = useRouter(); 
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef();
-  
   const params = useLocalSearchParams();
-  const chatIdRaw = chat?.id || params.id; 
+  const chatIdRaw = chat?.id || params.id;
   const chatName = chat?.name || params.name;
 
   const [mensaje, setMensaje] = useState('');
   const [messages, setMessages] = useState([]);
-  const [user, setUser] = useState(session?.user || null); 
+  const [user, setUser] = useState(session?.user || null);
   const [activeChatId, setActiveChatId] = useState(chatIdRaw);
+  const perfilesCache = useRef({});
 
-  const contieneTelefono = (texto) => /\b\d{7,}\b/.test(texto);
-  const contieneRedSocial = (texto) => /(instagram|facebook|whatsapp|t.me|@)/i.test(texto);
-  const contieneLink = (texto) => /(http|www\.)/i.test(texto);
+  // ── Trae nombre + usuario_empresa para la regla unificada ──────────────
+  const fetchPerfil = async (senderId) => {
+    if (!senderId || senderId === 'null') return null;
+    if (perfilesCache.current[senderId]) return perfilesCache.current[senderId];
+    const { data, error } = await supabase
+      .from('Usuarios')
+      .select('id, nombre, usuario_empresa, avatar_url')
+      .eq('id', senderId)
+      .single();
+    if (!error && data) { perfilesCache.current[senderId] = data; return data; }
+    return null;
+  };
 
-  const mensajeValido = (texto) => {
-    if (contieneTelefono(texto)) return false;
-    if (contieneRedSocial(texto)) return false;
-    if (contieneLink(texto) && !texto.includes("googleusercontent.com")) return false;
+  const contieneTelefono = (t) => /\b\d{7,}\b/.test(t);
+  const contieneRedSocial = (t) => /(instagram|facebook|whatsapp|t\.me|@)/i.test(t);
+  const contieneLink = (t) => /(http|www\.)/i.test(t);
+  const mensajeValido = (t) => {
+    if (contieneTelefono(t)) return false;
+    if (contieneRedSocial(t)) return false;
+    if (contieneLink(t) && !t.includes('googleusercontent.com')) return false;
     return true;
   };
 
   useEffect(() => {
     inicializarChat();
-
-    // Sincronizamos token al entrar al chat para asegurar que esté fresco
-    if (user) {
-        NotificacionesManager.register(user.id);
-    }
-
-    const backAction = () => { 
-      if (onBack) { onBack(); } else { router.back(); }
-      return true; 
-    };
-    const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
-
-    return () => {
-      backHandler.remove();
-      supabase.removeAllChannels();
-    };
+    const backAction = () => { if (onBack) onBack(); else router.back(); return true; };
+    const bh = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => { bh.remove(); supabase.removeAllChannels(); };
   }, [chatIdRaw]);
 
   const inicializarChat = async () => {
     try {
-        let currentUser = user;
-        if (!currentUser) {
-          const { data: { session: currentSession } } = await supabase.auth.getSession();
-          currentUser = currentSession?.user;
-          if (currentUser) setUser(currentUser);
-        }
+      let currentUser = user;
+      if (!currentUser) {
+        const { data: { session: s } } = await supabase.auth.getSession();
+        currentUser = s?.user;
+        if (currentUser) setUser(currentUser);
+      }
+      if (!currentUser || !chatIdRaw) return;
+      setActiveChatId(chatIdRaw);
 
-        if (!currentUser || !chatIdRaw) return;
-        setActiveChatId(chatIdRaw);
+      const { data: msgs, error } = await supabase
+        .from('messages')
+        .select('id, chat_id, sender_id, text, type, amount, description, status, created_at')
+        .eq('chat_id', chatIdRaw)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
 
-        const { data: msgs, error } = await supabase
-          .from('messages')
-          .select('*, Usuarios!messages_sender_id_fkey(usuario_empresa, avatar_url)') 
-          .eq('chat_id', chatIdRaw)
-          .order('created_at', { ascending: true });
-        
-        if (error) throw error;
-        setMessages(msgs || []);
+      const msgsEnriquecidos = await Promise.all(
+        (msgs || []).map(async (msg) => ({ ...msg, Usuarios: await fetchPerfil(msg.sender_id) }))
+      );
+      setMessages(msgsEnriquecidos);
 
-        supabase
-          .channel(`room:${chatIdRaw}`)
-          .on('postgres_changes', { 
-              event: 'INSERT', 
-              schema: 'public', 
-              table: 'messages', 
-              filter: `chat_id=eq.${chatIdRaw}` 
-          }, async (payload) => {
-            const { data: userData } = await supabase
-              .from('Usuarios')
-              .select('usuario_empresa, avatar_url')
-              .eq('id', payload.new.sender_id)
-              .single();
-            
-            const mensajeConPerfil = { ...payload.new, Usuarios: userData };
+      supabase.channel(`room:${chatIdRaw}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatIdRaw}` },
+          async (payload) => {
+            const perfil = await fetchPerfil(payload.new.sender_id);
             setMessages((prev) => {
-              if (prev.find(m => m.id === payload.new.id)) return prev;
-              return [...prev, mensajeConPerfil];
+              if (prev.find((m) => m.id === payload.new.id)) return prev;
+              return [...prev, { ...payload.new, Usuarios: perfil }];
             });
           })
-          .subscribe();
-    } catch (e) {
-        console.log("Error al inicializar:", e.message);
-    }
+        .subscribe();
+
+      if (currentUser?.id) NotificacionesManager.register(currentUser.id);
+    } catch (e) { console.log('Error chat:', e.message); }
   };
 
   const enviarMensaje = async (textoInput, tipo = 'text', metadata = {}) => {
     const textoFinal = textoInput || mensaje;
     const currentChatId = activeChatId || chatIdRaw;
-    
     if (!textoFinal.trim() || !currentChatId) return;
-    if (!mensajeValido(textoFinal)) {
-      Alert.alert("Mensaje bloqueado", "No podés enviar datos de contacto.");
-      return;
-    }
+    if (!mensajeValido(textoFinal)) { Alert.alert('Mensaje bloqueado', 'No podés enviar datos de contacto.'); return; }
 
-    let currentUserId = user?.id;
-    if (!currentUserId) {
-        const { data: s } = await supabase.auth.getSession();
-        currentUserId = s?.session?.user?.id;
+    let uid = user?.id;
+    if (!uid || uid === 'null') {
+      const { data: s } = await supabase.auth.getSession();
+      uid = s?.session?.user?.id;
     }
+    if (!uid) { Alert.alert('Error', 'No se pudo identificar tu usuario.'); return; }
 
     try {
-        const { error } = await supabase.from('messages').insert({
-          chat_id: currentChatId,
-          sender_id: currentUserId,
-          text: textoFinal,
-          type: tipo,
-          amount: metadata.amount ? parseFloat(metadata.amount) : null,
-          description: metadata.description || null,
-          status: 'pending'
-        });
-
-        if (error) throw error;
-        setMensaje(''); 
-    } catch (e) {
-        Alert.alert("Error de envío", e.message);
-    }
+      const { error } = await supabase.from('messages').insert({
+        chat_id: currentChatId, sender_id: uid, text: textoFinal,
+        type: tipo,
+        amount: metadata.amount ? parseFloat(metadata.amount) : null,
+        description: metadata.description || null,
+        status: 'pending',
+      });
+      if (error) throw error;
+      setMensaje('');
+    } catch (e) { Alert.alert('Error de envío', e.message); }
   };
 
   const crearPresupuestoRapido = () => {
-    Alert.prompt(
-      "Nuevo Presupuesto", "Ingresá el monto total:",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Enviar",
-          onPress: (monto) => {
-            if (!monto) return;
-            enviarMensaje("Presupuesto enviado", 'quote', {
-              amount: monto,
-              description: 'Presupuesto por servicio técnico solicitado.'
-            });
-          }
-        }
-      ],
-      "plain-text", "", "number-pad"
+    Alert.prompt('Nuevo Presupuesto', 'Ingresá el monto total:',
+      [{ text: 'Cancelar', style: 'cancel' },
+       { text: 'Enviar', onPress: (monto) => { if (monto) enviarMensaje('Presupuesto enviado', 'quote', { amount: monto, description: 'Presupuesto por servicio técnico solicitado.' }); }}],
+      'plain-text', '', 'number-pad'
     );
   };
 
   const renderMessage = ({ item }) => {
     const isMe = item.sender_id === user?.id;
     const time = item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    const nombreRemitente = item.Usuarios?.usuario_empresa || "Usuario";
+    const nombreRemitente = getNombreMostrar(item.Usuarios, '···'); // ← regla unificada
     const avatarRemitente = item.Usuarios?.avatar_url;
 
     return (
       <View style={[styles.msgWrapper, isMe ? styles.myMsg : styles.otherMsg]}>
         {!isMe && (
           <View style={styles.otherHeader}>
-            {avatarRemitente && <Image source={{ uri: avatarRemitente }} style={styles.miniAvatar} />}
+            {avatarRemitente
+              ? <Image source={{ uri: avatarRemitente }} style={styles.miniAvatar} />
+              : <View style={[styles.miniAvatar, styles.miniAvatarPlaceholder]} />
+            }
             <Text style={styles.senderName}>{nombreRemitente}</Text>
           </View>
         )}
-        
         {item.type === 'quote' ? (
           <View style={styles.quoteCard}>
-            <View style={styles.quoteHeader}>
-              <ShieldAlert size={14} color={COLORS.primary} />
-              <Text style={styles.quoteTitle}>Presupuesto Oficial</Text>
-            </View>
+            <View style={styles.quoteHeader}><ShieldAlert size={14} color={COLORS.primary} /><Text style={styles.quoteTitle}>Presupuesto Oficial</Text></View>
             <Text style={styles.quoteAmount}>${item.amount}</Text>
             <Text style={styles.quoteDesc}>{item.description}</Text>
             <View style={styles.quoteDivider} />
             {!isMe && item.status === 'pending' ? (
               <View style={styles.quoteActionsRow}>
-                <TouchableOpacity style={[styles.btnAction, {backgroundColor: COLORS.success}]}>
-                  <CheckCircle size={16} color="white" />
-                  <Text style={styles.btnActionText}>Aceptar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.btnAction, {backgroundColor: COLORS.danger}]}>
-                  <XCircle size={16} color="white" />
-                </TouchableOpacity>
+                <TouchableOpacity style={[styles.btnAction, { backgroundColor: COLORS.success }]}><CheckCircle size={16} color="white" /><Text style={styles.btnActionText}>Aceptar</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.btnAction, { backgroundColor: COLORS.danger }]}><XCircle size={16} color="white" /></TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.quoteStatus}>
-                <Clock size={12} color={COLORS.warning} />
-                <Text style={styles.pendingText}>
-                    {isMe ? "Esperando respuesta" : "Presupuesto recibido"}
-                </Text>
-              </View>
+              <View style={styles.quoteStatus}><Clock size={12} color={COLORS.warning} /><Text style={styles.pendingText}>{isMe ? 'Esperando respuesta' : 'Presupuesto recibido'}</Text></View>
             )}
           </View>
         ) : (
           <View style={[styles.msgBubble, isMe ? styles.myBubble : styles.otherBubble]}>
-            <Text style={[styles.msgText, isMe && {color: '#fff'}]}>{item.text}</Text>
-            <Text style={[styles.msgTime, isMe && {color: 'rgba(255,255,255,0.7)'}]}>{time}</Text>
+            <Text style={[styles.msgText, isMe && { color: '#fff' }]}>{item.text}</Text>
+            <Text style={[styles.msgTime, isMe && { color: 'rgba(255,255,255,0.7)' }]}>{time}</Text>
           </View>
         )}
       </View>
@@ -229,47 +179,24 @@ export default function ChatScreen({ chat, onBack, session }) {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => onBack ? onBack() : router.back()}>
-          <ChevronLeft size={24} color={COLORS.text} />
-        </TouchableOpacity>
+        <TouchableOpacity onPress={() => (onBack ? onBack() : router.back())}><ChevronLeft size={24} color={COLORS.text} /></TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerName}>{chatName || "Chat"}</Text>
-          <View style={styles.statusRow}>
-            <View style={styles.onlineDot} />
-            <Text style={styles.statusText}>En línea - Chat Protegido</Text>
-          </View>
+          <Text style={styles.headerName}>{chatName || 'Chat'}</Text>
+          <View style={styles.statusRow}><View style={styles.onlineDot} /><Text style={styles.statusText}>En línea · Chat Protegido</Text></View>
         </View>
       </View>
-
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 60 : 0}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 60 : 0}>
+        <FlatList ref={flatListRef} data={messages} renderItem={renderMessage}
           keyExtractor={(item) => (item.id ? item.id.toString() : Math.random().toString())}
           contentContainerStyle={styles.chatScroll}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
           showsVerticalScrollIndicator={false}
         />
-
         <View style={styles.inputContainer}>
-          <TouchableOpacity style={styles.attachBtn} onPress={crearPresupuestoRapido}>
-            <Plus size={24} color={COLORS.primary} />
-          </TouchableOpacity>
-          <TextInput 
-            style={styles.input} 
-            placeholder="Escribí un mensaje..."
-            value={mensaje}
-            onChangeText={setMensaje}
-          />
-          <TouchableOpacity style={styles.sendBtn} onPress={() => enviarMensaje()}>
-            <Send size={18} color="white" />
-          </TouchableOpacity>
+          <TouchableOpacity style={styles.attachBtn} onPress={crearPresupuestoRapido}><Plus size={24} color={COLORS.primary} /></TouchableOpacity>
+          <TextInput style={styles.input} placeholder="Escribí un mensaje..." value={mensaje} onChangeText={setMensaje} />
+          <TouchableOpacity style={styles.sendBtn} onPress={() => enviarMensaje()}><Send size={18} color="white" /></TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -286,10 +213,10 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 11, color: COLORS.textSec },
   chatScroll: { padding: 15, paddingBottom: 30 },
   msgWrapper: { marginBottom: 15, maxWidth: '85%' },
-  myMsg: { alignSelf: 'flex-end' },
-  otherMsg: { alignSelf: 'flex-start' },
+  myMsg: { alignSelf: 'flex-end' }, otherMsg: { alignSelf: 'flex-start' },
   otherHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, marginLeft: 5 },
   miniAvatar: { width: 20, height: 20, borderRadius: 10, marginRight: 6 },
+  miniAvatarPlaceholder: { backgroundColor: COLORS.border },
   senderName: { fontSize: 11, color: COLORS.textSec, fontWeight: '600' },
   msgBubble: { padding: 12, borderRadius: 18 },
   myBubble: { backgroundColor: COLORS.primary, borderBottomRightRadius: 4 },
@@ -310,5 +237,5 @@ const styles = StyleSheet.create({
   inputContainer: { flexDirection: 'row', alignItems: 'center', padding: 12, paddingBottom: 20, backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: COLORS.border },
   attachBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
   input: { flex: 1, height: 42, backgroundColor: COLORS.bg, borderRadius: 21, paddingHorizontal: 15, marginHorizontal: 10 },
-  sendBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' }
+  sendBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
 });

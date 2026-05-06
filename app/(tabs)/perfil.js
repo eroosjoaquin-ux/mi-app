@@ -19,8 +19,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// --- ARREGLADO: Subimos dos niveles para llegar a services ---
 import { supabase } from '../../services/supabaseConfig';
+import { getNombreMostrar } from '../../services/nombreUsuario'; // ← helper unificado
 
 const { width, height } = Dimensions.get('window');
 
@@ -34,18 +34,15 @@ export default function PerfilScreen() {
   const [fotoPerfil, setFotoPerfil] = useState('https://randomuser.me/api/portraits/men/32.jpg');
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [modalMetricasVisible, setModalMetricasVisible] = useState(false); 
+  const [modalMetricasVisible, setModalMetricasVisible] = useState(false);
+  // Editamos usuario_empresa si existe, si no editamos nombre
+  const [editandoEmpresa, setEditandoEmpresa] = useState(false);
   const [nuevoNombre, setNuevoNombre] = useState('');
-  
-  // --- ALINEADO CON REGISTRO Y MAPA ---
+
   const [radioCobertura, setRadioCobertura] = useState(0);
   const [nombreZona, setNombreZona] = useState('No especificada');
 
-  const [stats, setStats] = useState({
-    trabajos: 0,
-    rating: 0,
-    reputacion: 0 
-  });
+  const [stats, setStats] = useState({ trabajos: 0, rating: 0, reputacion: 0 });
 
   const perfilInfo = {
     especialidad: 'Técnico en Mantenimiento Integrado',
@@ -60,65 +57,64 @@ export default function PerfilScreen() {
 
   const cargarDatosUsuario = async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session?.user) {
-      const nombreRespaldo = session.user.user_metadata?.full_name || session.user.email.split('@')[0];
-      setUserData({ nombre: nombreRespaldo });
-      setNuevoNombre(nombreRespaldo);
+    if (!session?.user) return;
 
-      try {
-        const { data, error } = await supabase
-          .from('Usuarios')
-          .select('nombre, avatar_url, reputacion, trabajos, radio_alcance_km, zona_residencial') // ALINEADO: Nombres de columnas correctos
-          .eq('id', session.user.id)
-          .single();
-        
-        if (error) throw error;
+    try {
+      // ── FIX: traemos AMBOS campos de nombre ────────────────────────────
+      const { data, error } = await supabase
+        .from('Usuarios')
+        .select('nombre, usuario_empresa, avatar_url, reputacion, trabajos, radio_alcance_km, zona_residencial')
+        .eq('id', session.user.id)
+        .single();
 
-        if (data) {
-          if (data.nombre) {
-            setUserData(data);
-            setNuevoNombre(data.nombre);
-          }
-          if (data.avatar_url) setFotoPerfil(data.avatar_url);
-          
-          // ALINEADO: Seteo de variables de mapa
-          if (data.radio_alcance_km) setRadioCobertura(data.radio_alcance_km);
-          if (data.zona_residencial) setNombreZona(data.zona_residencial); 
-          
-          const reputacionValor = data.reputacion || 0; 
-          setStats({
-            trabajos: data.trabajos || 0,
-            rating: Number(reputacionValor).toFixed(1),
-            reputacion: Math.round(reputacionValor * 20)
-          });
-        }
-      } catch (e) {
-        console.error("Error cargando perfil:", e);
+      if (error) throw error;
+
+      if (data) {
+        setUserData(data);
+
+        // El campo editable es usuario_empresa si existe, si no nombre
+        const tieneEmpresa = !!data.usuario_empresa?.trim();
+        setEditandoEmpresa(tieneEmpresa);
+        setNuevoNombre(tieneEmpresa ? data.usuario_empresa : (data.nombre || ''));
+
+        if (data.avatar_url) setFotoPerfil(data.avatar_url);
+        if (data.radio_alcance_km) setRadioCobertura(data.radio_alcance_km);
+        if (data.zona_residencial) setNombreZona(data.zona_residencial);
+
+        const rep = data.reputacion || 0;
+        setStats({
+          trabajos: data.trabajos || 0,
+          rating: Number(rep).toFixed(1),
+          reputacion: Math.round(rep * 20),
+        });
       }
+    } catch (e) {
+      console.error('Error cargando perfil:', e.message);
     }
   };
 
   const actualizarNombre = async () => {
     if (!nuevoNombre || nuevoNombre.trim().length < 3) {
-      return Alert.alert("Error", "El nombre debe tener al menos 3 caracteres.");
+      return Alert.alert('Error', 'El nombre debe tener al menos 3 caracteres.');
     }
 
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      // Actualizamos el campo correcto según si tiene empresa o no
+      const campo = editandoEmpresa ? 'usuario_empresa' : 'nombre';
       const { error } = await supabase
         .from('Usuarios')
-        .update({ nombre: nuevoNombre.trim() })
+        .update({ [campo]: nuevoNombre.trim() })
         .eq('id', session.user.id);
 
       if (error) throw error;
 
-      setUserData(prev => ({ ...prev, nombre: nuevoNombre.trim() }));
+      setUserData(prev => ({ ...prev, [campo]: nuevoNombre.trim() }));
       setModalVisible(false);
-      Alert.alert("¡Éxito!", "Nombre actualizado correctamente.");
+      Alert.alert('¡Éxito!', 'Nombre actualizado correctamente.');
     } catch (error) {
-      Alert.alert("Error", "No se pudo actualizar el nombre.");
+      Alert.alert('Error', 'No se pudo actualizar el nombre.');
     } finally {
       setLoading(false);
     }
@@ -126,18 +122,17 @@ export default function PerfilScreen() {
 
   const handleLogout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await supabase.auth.signOut();
       setUserData(null);
-      router.replace('/'); 
+      router.replace('/LoginScreen');
     } catch (error) {
-      Alert.alert("Error", "No se pudo cerrar la sesión correctamente.");
+      Alert.alert('Error', 'No se pudo cerrar la sesión correctamente.');
     }
   };
 
   const cambiarFotoPerfil = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') return Alert.alert("Permisos", "Necesitamos acceso a tus fotos.");
+    if (status !== 'granted') return Alert.alert('Permisos', 'Necesitamos acceso a tus fotos.');
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -149,18 +144,13 @@ export default function PerfilScreen() {
     if (!result.canceled) {
       const uri = result.assets[0].uri;
       setLoading(true);
-
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const userId = session.user.id;
         const fileName = `${userId}/avatar_${Date.now()}.jpg`;
 
         const formData = new FormData();
-        formData.append('file', {
-          uri: uri,
-          name: fileName,
-          type: 'image/jpeg',
-        });
+        formData.append('file', { uri, name: fileName, type: 'image/jpeg' });
 
         const { error: uploadError } = await supabase.storage
           .from('avatars')
@@ -168,9 +158,7 @@ export default function PerfilScreen() {
 
         if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('avatars')
-          .getPublicUrl(fileName);
+        const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
 
         const { error: updateError } = await supabase
           .from('Usuarios')
@@ -178,28 +166,33 @@ export default function PerfilScreen() {
           .eq('id', userId);
 
         if (updateError) throw updateError;
-
         setFotoPerfil(publicUrl);
-        Alert.alert("¡Éxito!", "Tu foto de perfil ha sido actualizada.");
-      } catch (error) {
-        Alert.alert("Error", "No se pudo subir la imagen.");
+      } catch (e) {
+        Alert.alert('Error', 'No se pudo actualizar la foto.');
       } finally {
         setLoading(false);
       }
     }
   };
 
+  // ── Nombre a mostrar usando la regla unificada ──────────────────────────
+  const nombreMostrar = getNombreMostrar(userData, 'Cargando...');
+
   return (
-    <View style={styles.container}>
-      
-      <Modal visible={modalVisible} transparent={true} animationType="fade">
+    <View style={{ flex: 1, backgroundColor: NEUTRAL.lightGray }}>
+
+      {/* Modal editar nombre */}
+      <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Editar Nombre</Text>
+            <Text style={styles.modalTitle}>
+              {editandoEmpresa ? 'Editar nombre de empresa' : 'Editar nombre real'}
+            </Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { marginTop: 16 }]}
               value={nuevoNombre}
               onChangeText={setNuevoNombre}
+              placeholder={editandoEmpresa ? 'Nombre de empresa' : 'Nombre y apellido'}
               placeholderTextColor={NEUTRAL.gray}
             />
             <View style={styles.modalButtons}>
@@ -207,32 +200,35 @@ export default function PerfilScreen() {
                 <Text style={styles.cancelBtnText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveBtn} onPress={actualizarNombre} disabled={loading}>
-                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>Guardar</Text>}
+                {loading
+                  ? <ActivityIndicator size="small" color="#FFF" />
+                  : <Text style={styles.saveBtnText}>Guardar</Text>
+                }
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      <Modal visible={modalMetricasVisible} transparent={true} animationType="slide">
+      {/* Modal métricas */}
+      <Modal visible={modalMetricasVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={{ alignItems: 'center', marginBottom: 20 }}>
-              <Briefcase size={40} color={BRAND.primary} />
-              <Text style={[styles.modalTitle, { marginTop: 10 }]}>Historial de Trabajo</Text>
-            </View>
-            
+            <Text style={styles.modalTitle}>Detalle de métricas</Text>
             <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>Trabajos Terminados:</Text>
+              <Text style={styles.metricLabel}>Trabajos completados</Text>
               <Text style={styles.metricValue}>{stats.trabajos}</Text>
             </View>
             <View style={styles.metricRow}>
-              <Text style={styles.metricLabel}>Puntuación General:</Text>
+              <Text style={styles.metricLabel}>Rating promedio</Text>
               <Text style={styles.metricValue}>{stats.rating} ★</Text>
             </View>
-
-            <TouchableOpacity 
-              style={[styles.saveBtn, { width: '100%', marginTop: 20 }]} 
+            <View style={styles.metricRow}>
+              <Text style={styles.metricLabel}>Nivel de confianza</Text>
+              <Text style={styles.metricValue}>{stats.reputacion}%</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.saveBtn, { width: '100%', marginTop: 20 }]}
               onPress={() => setModalMetricasVisible(false)}
             >
               <Text style={styles.saveBtnText}>Cerrar</Text>
@@ -243,13 +239,13 @@ export default function PerfilScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
         <View style={styles.header}>
-          <Image 
-            source={{ uri: 'https://images.unsplash.com/photo-1581094288338-2314dddb7e8b?w=800' }} 
-            style={styles.coverImage} 
+          <Image
+            source={{ uri: 'https://images.unsplash.com/photo-1581094288338-2314dddb7e8b?w=800' }}
+            style={styles.coverImage}
           />
           <View style={styles.overlay} />
           <SafeAreaView style={styles.navBar}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/')}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
               <ChevronLeft size={24} color="#FFF" />
             </TouchableOpacity>
           </SafeAreaView>
@@ -259,14 +255,22 @@ export default function PerfilScreen() {
           <View style={styles.avatarWrapper}>
             <Image source={{ uri: fotoPerfil }} style={styles.mainAvatar} />
             <TouchableOpacity style={styles.cameraIcon} onPress={cambiarFotoPerfil} disabled={loading}>
-              {loading ? <ActivityIndicator size="small" color="#FFF" /> : <Camera size={18} color="#FFF" />}
+              {loading
+                ? <ActivityIndicator size="small" color="#FFF" />
+                : <Camera size={18} color="#FFF" />
+              }
             </TouchableOpacity>
           </View>
 
           <View style={styles.nameSection}>
-            <Text style={styles.userName}>{userData?.nombre || "Cargando..."}</Text>
+            {/* ── FIX: usa la regla unificada usuario_empresa > nombre ── */}
+            <Text style={styles.userName}>{nombreMostrar}</Text>
+            {/* Si tiene empresa, mostramos el nombre real debajo en gris */}
+            {userData?.usuario_empresa?.trim() && userData?.nombre?.trim() && (
+              <Text style={styles.nombreReal}>{userData.nombre}</Text>
+            )}
             <Text style={styles.userSpec}>{perfilInfo.especialidad}</Text>
-            
+
             <View style={styles.locationBadge}>
               <MapPin size={14} color={BRAND.primary} />
               <Text style={styles.locationBadgeText}>
@@ -275,8 +279,8 @@ export default function PerfilScreen() {
             </View>
           </View>
 
-          <TouchableOpacity 
-            style={styles.trustSection} 
+          <TouchableOpacity
+            style={styles.trustSection}
             onPress={() => setModalMetricasVisible(true)}
             activeOpacity={0.7}
           >
@@ -287,7 +291,10 @@ export default function PerfilScreen() {
               </Text>
             </View>
             <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${stats.reputacion}%`, backgroundColor: stats.reputacion > 50 ? BRAND.success : BRAND.warning }]} />
+              <View style={[styles.progressBarFill, {
+                width: `${stats.reputacion}%`,
+                backgroundColor: stats.reputacion > 50 ? BRAND.success : BRAND.warning,
+              }]} />
             </View>
             <Text style={{ fontSize: 10, color: NEUTRAL.gray, marginTop: 5, textAlign: 'center' }}>
               Toca para ver detalles de trabajos
@@ -332,7 +339,7 @@ export default function PerfilScreen() {
           <View style={styles.bioCard}>
             <Text style={styles.bioText}>{perfilInfo.bio}</Text>
           </View>
-          
+
           <TouchableOpacity style={styles.editBtn} onPress={() => setModalVisible(true)} disabled={loading}>
             <Edit3 size={18} color={BRAND.primary} />
             <Text style={styles.editBtnText}>Editar Perfil</Text>
@@ -343,28 +350,27 @@ export default function PerfilScreen() {
             <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
           </TouchableOpacity>
         </View>
-        
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
 }
 
-// ... (estilos permanecen idénticos para no cambiar ni un espacio del diseño)
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: NEUTRAL.lightGray },
   header: { height: height * 0.22, width: '100%' },
   coverImage: { width: '100%', height: '100%' },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
   navBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 20 },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
-  profileCard: { backgroundColor: NEUTRAL.white, marginHorizontal: 16, marginTop: -(height * 0.07), borderRadius: 28, padding: 20, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  profileCard: { backgroundColor: NEUTRAL.white, marginHorizontal: 16, marginTop: -(height * 0.07), borderRadius: 28, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   avatarWrapper: { marginTop: -75, marginBottom: 12 },
   mainAvatar: { width: 110, height: 110, borderRadius: 55, borderWidth: 4, borderColor: NEUTRAL.white },
   cameraIcon: { position: 'absolute', bottom: 5, right: 0, backgroundColor: BRAND.primary, padding: 8, borderRadius: 20, borderWidth: 3, borderColor: NEUTRAL.white, justifyContent: 'center', alignItems: 'center', minWidth: 35, minHeight: 35 },
   nameSection: { alignItems: 'center', marginBottom: 20 },
   userName: { fontSize: 24, fontWeight: '800', color: NEUTRAL.dark },
-  userSpec: { fontSize: 15, color: BRAND.primary, marginTop: 2, fontWeight: '600' },
+  nombreReal: { fontSize: 13, color: NEUTRAL.gray, marginTop: 2 },
+  userSpec: { fontSize: 15, color: BRAND.primary, marginTop: 4, fontWeight: '600' },
   locationBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: NEUTRAL.lightGray, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginTop: 12 },
   locationBadgeText: { fontSize: 13, color: NEUTRAL.gray, fontWeight: '600' },
   trustSection: { width: '100%', marginBottom: 24, padding: 15, backgroundColor: '#F8F9FA', borderRadius: 20, borderWidth: 1, borderColor: NEUTRAL.border },
@@ -386,14 +392,14 @@ const styles = StyleSheet.create({
   warningText: { fontSize: 12, color: NEUTRAL.gray, marginTop: 2 },
   contentSection: { padding: 20 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: NEUTRAL.dark, marginBottom: 12 },
-  bioCard: { backgroundColor: NEUTRAL.white, padding: 18, borderRadius: 20, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
+  bioCard: { backgroundColor: NEUTRAL.white, padding: 18, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
   bioText: { fontSize: 15, color: NEUTRAL.gray, lineHeight: 22 },
   editBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.primary },
   editBtnText: { color: BRAND.primary, fontWeight: '700', fontSize: 16 },
   logoutBtn: { marginTop: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 10 },
   logoutBtnText: { color: NEUTRAL.gray, fontSize: 14, fontWeight: '500' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 28, padding: 25, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 15, elevation: 10 },
+  modalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 28, padding: 25, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 15, elevation: 10 },
   modalTitle: { fontSize: 20, fontWeight: '900', color: NEUTRAL.dark, textAlign: 'center' },
   metricRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: NEUTRAL.border },
   metricLabel: { fontSize: 15, color: NEUTRAL.gray, fontWeight: '600' },
@@ -403,5 +409,5 @@ const styles = StyleSheet.create({
   cancelBtn: { padding: 10 },
   cancelBtnText: { color: NEUTRAL.gray, fontWeight: '600' },
   saveBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
-  saveBtnText: { color: '#FFF', fontWeight: '700' }
+  saveBtnText: { color: '#FFF', fontWeight: '700' },
 });

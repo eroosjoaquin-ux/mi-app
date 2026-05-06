@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Briefcase, Globe, MessageSquare, User, Wallet } from 'lucide-react-native';
+import { Briefcase, MessageSquare, User, Wallet } from 'lucide-react-native';
 
 export default function TabsLayout() {
   return (
@@ -20,16 +20,7 @@ export default function TabsLayout() {
         fontWeight: '600'
       }
     }}>
-      {/* 1. SOCIAL */}
-      <Tabs.Screen 
-        name="social" 
-        options={{ 
-          title: 'Comunidad',
-          tabBarIcon: ({ color }) => <Globe size={24} color={color} /> 
-        }} 
-      />
-
-      {/* 2. PERFIL */}
+      {/* 1. PERFIL */}
       <Tabs.Screen 
         name="perfil" 
         options={{ 
@@ -38,7 +29,7 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 3. MIS TRABAJOS */}
+      {/* 2. MIS TRABAJOS */}
       <Tabs.Screen 
         name="mis_trabajos" 
         options={{ 
@@ -47,7 +38,7 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 4. MENSAJES - Apuntamos a la LISTA como principal */}
+      {/* 3. MENSAJES */}
       <Tabs.Screen 
         name="chat/lista_chats" 
         options={{ 
@@ -56,7 +47,7 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 5. WALLET */}
+      {/* 4. WALLET */}
       <Tabs.Screen 
         name="wallet" 
         options={{ 
@@ -65,21 +56,15 @@ export default function TabsLayout() {
         }} 
       />
 
-      {/* 6. OCULTAR RUTAS INTERNAS - Ocultamos el index y el chat individual */}
+      {/* OCULTAR RUTAS INTERNAS */}
       <Tabs.Screen 
         name="chat/index" 
-        options={{ 
-          href: null, 
-        }} 
+        options={{ href: null }} 
       />
-
       <Tabs.Screen 
         name="chat/chats" 
-        options={{ 
-          href: null, 
-        }} 
+        options={{ href: null }} 
       />
-
     </Tabs>
   );
 }
