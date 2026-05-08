@@ -12,15 +12,14 @@ export default function RootLayout() {
   const [isVerificado, setIsVerificado] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // NUEVO: BLOQUEO DEL BOTÓN ATRÁS EN PANTALLAS PROTEGIDAS
+  // BLOQUEO DEL BOTÓN ATRÁS EN PANTALLAS PROTEGIDAS
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       const rootSegment = segments[0];
-      // Si está en Home o en tabs, bloqueamos el botón atrás
       if (rootSegment === 'HomeScreen' || rootSegment === '(tabs)') {
-        return true; // true = bloquea, no hace nada
+        return true;
       }
-      return false; // false = comportamiento normal
+      return false;
     });
     return () => backHandler.remove();
   }, [segments]);
@@ -33,7 +32,7 @@ export default function RootLayout() {
     }
   }, []);
 
-  // 2. REGISTRAR PUSH TOKEN
+  // 2. REGISTRAR PUSH TOKEN (Solo cuando está logueado y verificado)
   useEffect(() => {
     if (session?.user && isVerificado && NotificacionesManager?.register) {
       NotificacionesManager.register(session.user.id);
@@ -81,19 +80,29 @@ export default function RootLayout() {
   // 5. LÓGICA DE NAVEGACIÓN Y PROTECCIÓN DE RUTAS
   useEffect(() => {
     if (loading) return;
+    
     const rootSegment = segments[0];
     const isLoginPage = rootSegment === 'LoginScreen';
     const isRegistroPage = rootSegment === 'RegistroScreen';
     const isBiometricPage = rootSegment === 'registro_biometrico';
     const isMapaPage = rootSegment === 'components' && segments[1] === 'Mapas';
 
+    // CASO A: No hay sesión -> Mandar a Login
     if (!session) {
       if (!isLoginPage && !isRegistroPage && !isBiometricPage && !isMapaPage) {
         router.replace('/LoginScreen');
       }
     } 
+    // CASO B: Hay sesión pero NO está verificado -> Mandar a Biometría
+    // ← ESTE BLOQUE FALTABA EN TU VERSIÓN ORIGINAL
+    else if (session && !isVerificado) {
+      if (!isBiometricPage && !isLoginPage && !isRegistroPage) {
+        router.replace('/registro_biometrico');
+      }
+    }
+    // CASO C: Hay sesión y ESTÁ verificado -> Mandar a Home
     else if (session && isVerificado) {
-      if (isLoginPage || isRegistroPage || isBiometricPage || rootSegment === 'index') {
+      if (isLoginPage || isRegistroPage || isBiometricPage || rootSegment === 'index' || !rootSegment) {
         router.replace('/HomeScreen');
       }
     }

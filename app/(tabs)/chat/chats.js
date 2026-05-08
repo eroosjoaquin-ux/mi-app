@@ -8,8 +8,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import NotificacionesManager from '../../../services/notificaciones';
 import { getNombreMostrar } from '../../../services/nombreUsuario';
+import { clearChatActivo, setChatActivo } from '../../../services/notificaciones';
 import { supabase } from '../../../services/supabaseConfig';
 
 const COLORS = {
@@ -59,7 +59,7 @@ export default function ChatScreen({ chat, onBack, session }) {
     inicializarChat();
     const backAction = () => { if (onBack) onBack(); else router.back(); return true; };
     const bh = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => { bh.remove(); supabase.removeAllChannels(); };
+    return () => { bh.remove(); supabase.removeAllChannels(); clearChatActivo(); };
   }, [chatIdRaw]);
 
   const inicializarChat = async () => {
@@ -72,6 +72,7 @@ export default function ChatScreen({ chat, onBack, session }) {
       }
       if (!currentUser || !chatIdRaw) return;
       setActiveChatId(chatIdRaw);
+      setChatActivo(chatIdRaw);
 
       const { data: msgs, error } = await supabase
         .from('messages')
@@ -96,7 +97,6 @@ export default function ChatScreen({ chat, onBack, session }) {
           })
         .subscribe();
 
-      if (currentUser?.id) NotificacionesManager.register(currentUser.id);
     } catch (e) { console.log('Error chat:', e.message); }
   };
 
