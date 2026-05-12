@@ -108,14 +108,16 @@ export default function RegistroScreen() {
       const { data: existingUser } = await supabase.from('Usuarios').select('id').eq('dni', dni).maybeSingle();
       if (existingUser) throw new Error("Este DNI ya está registrado.");
 
-      // 1. Primero creas el usuario en Auth (esto dispara el Trigger de Supabase automáticamente)
+      // 1. Primero creas el usuario en Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({ email: cleanEmail, password: clave });
       if (authError) throw authError;
 
       const userId = authData?.user?.id;
       
+      // ESTA ES LA LÍNEA AGREGADA: Espera 1 segundo para que el trigger de la DB termine
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // 2. En lugar de .insert(), usamos .update() 
-      // Porque el Trigger ya creó la fila con el ID, ahora le ponemos los datos del formulario
       const { error: dbError } = await supabase
         .from('Usuarios')
         .update({
@@ -130,11 +132,11 @@ export default function RegistroScreen() {
           zona_residencial: zonaResidencial || 'Zona seleccionada',
           fecha_auditoria: new Date().toISOString()
         })
-        .eq('id', userId); // Buscamos la fila que acaba de crear el Trigger
+        .eq('id', userId); 
 
       if (dbError) throw dbError;
       
-      Alert.alert("¡Éxito!", "Cuenta creada correctamente.", [{ text: "Ingresar", onPress: () => router.replace('/HomeScreen') }]);
+      Alert.alert("¡Éxito!", "Cuenta creada correctamente.", [{ text: "OK" }]);
     } catch (e) {
       Alert.alert("Error de Registro", e.message);
     } finally {

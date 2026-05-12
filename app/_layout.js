@@ -9,7 +9,6 @@ export default function RootLayout() {
   const router = useRouter();
   
   const [session, setSession] = useState(null);
-  const [isVerificado, setIsVerificado] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // BLOQUEO DEL BOTÓN ATRÁS EN PANTALLAS PROTEGIDAS
@@ -24,7 +23,7 @@ export default function RootLayout() {
     return () => backHandler.remove();
   }, [segments]);
 
-  // 1. EL DESPERTADOR
+  // 1. EL DESPERTADOR (Notificaciones)
   useEffect(() => {
     if (NotificacionesManager?.init) {
       const subscription = NotificacionesManager.init(router);
@@ -32,12 +31,12 @@ export default function RootLayout() {
     }
   }, []);
 
-  // 2. REGISTRAR PUSH TOKEN (Solo cuando está logueado y verificado)
+  // 2. REGISTRAR PUSH TOKEN (Solo cuando hay sesión activa)
   useEffect(() => {
-    if (session?.user && isVerificado && NotificacionesManager?.register) {
+    if (session?.user && NotificacionesManager?.register) {
       NotificacionesManager.register(session.user.id);
     }
-  }, [session, isVerificado]);
+  }, [session]);
 
   // 3. INICIALIZACIÓN DE SESIÓN
   useEffect(() => {
@@ -46,14 +45,9 @@ export default function RootLayout() {
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) {
           setSession(null);
-          setIsVerificado(false);
           return;
         }
         setSession(initialSession);
-        if (initialSession?.user) {
-          const { data } = await supabase.from('Usuarios').select('verificado_biometria').eq('id', initialSession.user.id).maybeSingle();
-          if (data) setIsVerificado(!!data.verificado_biometria);
-        }
       } catch (error) {
         setSession(null);
       } finally {
@@ -65,14 +59,8 @@ export default function RootLayout() {
 
   // 4. MONITOR DE AUTENTICACIÓN EN TIEMPO REAL
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, currentSession) => {
       setSession(currentSession);
-      if (currentSession?.user) {
-        const { data } = await supabase.from('Usuarios').select('verificado_biometria').eq('id', currentSession.user.id).maybeSingle();
-        setIsVerificado(!!data?.verificado_biometria);
-      } else {
-        setIsVerificado(false);
-      }
     });
     return () => authListener?.subscription.unsubscribe();
   }, []);
@@ -92,21 +80,14 @@ export default function RootLayout() {
       if (!isLoginPage && !isRegistroPage && !isBiometricPage && !isMapaPage) {
         router.replace('/LoginScreen');
       }
-    } 
-    // CASO B: Hay sesión pero NO está verificado -> Mandar a Biometría
-    // ← ESTE BLOQUE FALTABA EN TU VERSIÓN ORIGINAL
-    else if (session && !isVerificado) {
-      if (!isBiometricPage && !isLoginPage && !isRegistroPage) {
-        router.replace('/registro_biometrico');
-      }
     }
-    // CASO C: Hay sesión y ESTÁ verificado -> Mandar a Home
-    else if (session && isVerificado) {
+    // CASO B: Hay sesión -> Mandar a Home (si intenta volver a login/registro/raíz)
+    else {
       if (isLoginPage || isRegistroPage || isBiometricPage || rootSegment === 'index' || !rootSegment) {
         router.replace('/HomeScreen');
       }
     }
-  }, [session, isVerificado, segments, loading]);
+  }, [session, segments, loading]);
 
   if (loading) {
     return (
