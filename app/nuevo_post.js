@@ -111,6 +111,51 @@ export default function nuevo_post({ onSuccess }) {
                 .eq('id', user.id)
                 .single();
 
+            // Subir todas las imágenes al bucket imagenes_posts y obtener URLs públicas
+            let imagenUrl = null;       // primera foto (compatibilidad con posts viejos)
+            let imagenesUrls = null;    // array de todas las fotos (para el grid)
+
+            if (imagenes.length > 0) {
+                const urlsSubidas = [];
+
+                for (let i = 0; i < imagenes.length; i++) {
+                    const uri = imagenes[i];
+                    const ext = uri.split('.').pop().split('?')[0] || 'jpg';
+                    const fileName = `${user.id}_${Date.now()}_${i}.${ext}`;
+
+                    try {
+                        const response = await fetch(uri);
+                        const blob = await response.blob();
+                        const arrayBuffer = await new Response(blob).arrayBuffer();
+
+                        const { error: uploadError } = await supabase.storage
+                            .from('imagenes_posts')
+                            .upload(fileName, arrayBuffer, {
+                                contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+                                upsert: false,
+                            });
+
+                        if (!uploadError) {
+                            const { data: urlData } = supabase.storage
+                                .from('imagenes_posts')
+                                .getPublicUrl(fileName);
+                            if (urlData?.publicUrl) {
+                                urlsSubidas.push(urlData.publicUrl);
+                            }
+                        } else {
+                            console.error(`Error subiendo imagen ${i}:`, uploadError.message);
+                        }
+                    } catch (e) {
+                        console.error(`Error procesando imagen ${i}:`, e.message);
+                    }
+                }
+
+                if (urlsSubidas.length > 0) {
+                    imagenUrl = urlsSubidas[0];       // primera para retrocompatibilidad
+                    imagenesUrls = urlsSubidas;        // todas para el grid
+                }
+            }
+
             const { error } = await supabase
                 .from('posts')
                 .insert([{
@@ -126,7 +171,8 @@ export default function nuevo_post({ onSuccess }) {
                     es_urgente: esUrgente,
                     descripcion: descripcion,
                     opciones: opciones,
-                    postPhoto: imagenes.length > 0 ? imagenes[0] : null,
+                    imagen_url: imagenUrl,
+                    imagenes_urls: imagenesUrls,
                     reputacion: 100,
                     verificado: true,
                     likes: 0,
