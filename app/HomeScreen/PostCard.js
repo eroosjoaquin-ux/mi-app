@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { Heart, MessageSquare, MoreHorizontal, Pencil, Reply, Send, ShieldCheck, Trash2, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
@@ -22,6 +23,7 @@ const COLORS = {
 const MAX_INPUT_HEIGHT = 100;
 
 export default function PostCard({ post, onContactar, onPostEliminado, onPostEditado }) {
+  const router = useRouter();
   const userName = getNombreMostrar(post.Usuarios, post.titulo);
   const userAvatar = post.Usuarios?.avatar_url || post.userPhoto;
 
@@ -256,11 +258,33 @@ export default function PostCard({ post, onContactar, onPostEliminado, onPostEdi
       setComentarios(comentariosCompletos);
       setCommentsCount(comentariosCompletos.length);
 
+      // Cargar likes reales de la tabla likes_comentarios
+      const todosLosIds = [];
+      comentariosCompletos.forEach(c => {
+        todosLosIds.push(c.id);
+        (c.respuestas || []).forEach(r => todosLosIds.push(r.id));
+      });
+
+      let likesDados = new Set();
+      let conteosLikes = {};
+
+      if (todosLosIds.length > 0) {
+        const { data: likesData } = await supabase
+          .from('likes_comentarios')
+          .select('comentario_id, usuario_id')
+          .in('comentario_id', todosLosIds);
+
+        (likesData || []).forEach(l => {
+          conteosLikes[l.comentario_id] = (conteosLikes[l.comentario_id] || 0) + 1;
+          if (l.usuario_id === sesionUserId) likesDados.add(l.comentario_id);
+        });
+      }
+
       const likesIniciales = {};
       comentariosCompletos.forEach(c => {
-        likesIniciales[c.id] = { count: c.likes || 0, liked: false };
+        likesIniciales[c.id] = { count: conteosLikes[c.id] || 0, liked: likesDados.has(c.id) };
         (c.respuestas || []).forEach(r => {
-          likesIniciales[r.id] = { count: r.likes || 0, liked: false };
+          likesIniciales[r.id] = { count: conteosLikes[r.id] || 0, liked: likesDados.has(r.id) };
         });
       });
       setLikesComentario(likesIniciales);
@@ -303,14 +327,34 @@ export default function PostCard({ post, onContactar, onPostEliminado, onPostEdi
     }
   };
 
-  const toggleLike = (id) => {
-    setLikesComentario(prev => {
-      const actual = prev[id] || { count: 0, liked: false };
-      return {
+  const toggleLikeComentario = async (id) => {
+    if (!sesionUserId) return;
+    const actual = likesComentario[id] || { count: 0, liked: false };
+    // Optimista
+    setLikesComentario(prev => ({
+      ...prev,
+      [id]: { count: actual.liked ? actual.count - 1 : actual.count + 1, liked: !actual.liked }
+    }));
+    try {
+      if (actual.liked) {
+        await supabase
+          .from('likes_comentarios')
+          .delete()
+          .eq('comentario_id', id)
+          .eq('usuario_id', sesionUserId);
+      } else {
+        await supabase
+          .from('likes_comentarios')
+          .insert({ comentario_id: id, usuario_id: sesionUserId });
+      }
+    } catch (e) {
+      // Revertir si falla
+      setLikesComentario(prev => ({
         ...prev,
-        [id]: { count: actual.liked ? actual.count - 1 : actual.count + 1, liked: !actual.liked }
-      };
-    });
+        [id]: actual
+      }));
+      console.error('Error like comentario:', e.message);
+    }
   };
 
   const handleResponder = (item) => {
@@ -503,7 +547,7 @@ export default function PostCard({ post, onContactar, onPostEliminado, onPostEdi
           </View>
 
           <View style={styles.commentActions}>
-            <TouchableOpacity style={styles.commentActionBtn} onPress={() => toggleLike(item.id)}>
+            <TouchableOpacity style={styles.commentActionBtn} onPress={() => toggleLikeComentario(item.id)}>
               <Heart
                 size={13}
                 color={likeData.liked ? COLORS.red : COLORS.textSecondary}
@@ -537,23 +581,29 @@ export default function PostCard({ post, onContactar, onPostEliminado, onPostEdi
   return (
     <View style={[styles.postCard, post.es_urgente && { borderColor: COLORS.red, borderWidth: 1.5 }]}>
       <View style={styles.postHeader}>
-        <View style={styles.contenedorAvatar}>
-          {userAvatar
-            ? <Image source={{ uri: userAvatar }} style={styles.userPhoto} />
-            : <View style={[styles.userPhoto, { backgroundColor: COLORS.blue, justifyContent: 'center', alignItems: 'center' }]}>
-                <Text style={{ color: 'white', fontWeight: 'bold' }}>{userName.charAt(0).toUpperCase()}</Text>
-              </View>
-          }
-          <BarraReputacion puntos={post.reputacion || 0} />
-        </View>
-        <View style={styles.postHeaderText}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={styles.userName}>{userName}</Text>
-            {!!post.verificado && <ShieldCheck size={16} color={COLORS.blue} style={{ marginLeft: 4 }} />}
-            {!!post.es_urgente && <Text style={styles.tagUrgente}>🚨 URGENTE</Text>}
+        <TouchableOpacity
+          style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+          onPress={() => router.push({ pathname: '/perfil', params: { userId: post.usuario_id } })}
+          activeOpacity={0.7}
+        >
+          <View style={styles.contenedorAvatar}>
+            {userAvatar
+              ? <Image source={{ uri: userAvatar }} style={styles.userPhoto} />
+              : <View style={[styles.userPhoto, { backgroundColor: COLORS.blue, justifyContent: 'center', alignItems: 'center' }]}>
+                  <Text style={{ color: 'white', fontWeight: 'bold' }}>{userName.charAt(0).toUpperCase()}</Text>
+                </View>
+            }
+            <BarraReputacion puntos={post.reputacion || 0} />
           </View>
-          <Text style={styles.userSubtext}>{post.rubro} • {post.created_at ? new Date(post.created_at).toLocaleDateString() : 'Recién'}</Text>
-        </View>
+          <View style={styles.postHeaderText}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={styles.userName}>{userName}</Text>
+              {!!post.verificado && <ShieldCheck size={16} color={COLORS.blue} style={{ marginLeft: 4 }} />}
+              {!!post.es_urgente && <Text style={styles.tagUrgente}>🚨 URGENTE</Text>}
+            </View>
+            <Text style={styles.userSubtext}>{post.rubro} • {post.created_at ? new Date(post.created_at).toLocaleDateString() : 'Recién'}</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* Tres puntitos del POST — solo si es propio */}
         {esPostPropio && (

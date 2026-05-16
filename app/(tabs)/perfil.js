@@ -1,12 +1,12 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  Briefcase,
   Camera,
   ChevronLeft,
   Edit3, LogOut, MapPin,
   ShieldAlert,
-  Star
+  Star,
+  UserCheck
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import {
@@ -19,8 +19,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { supabase } from '../../services/supabaseConfig';
 import { getNombreMostrar } from '../../services/nombreUsuario'; // ← helper unificado
+import { supabase } from '../../services/supabaseConfig';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,6 +29,10 @@ const BRAND = { primary: '#1976D2', success: '#2E7D32', warning: '#ED6C02', dang
 
 export default function PerfilScreen() {
   const router = useRouter();
+  const { userId: userIdParam } = useLocalSearchParams();
+  const [miUserId, setMiUserId] = useState(null);
+  // Si hay param y es distinto al mío → perfil de otro
+  const esMiPerfil = !userIdParam || userIdParam === miUserId;
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState(null);
   const [fotoPerfil, setFotoPerfil] = useState('https://randomuser.me/api/portraits/men/32.jpg');
@@ -59,12 +63,15 @@ export default function PerfilScreen() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
 
+    const idACargar = userIdParam || session.user.id;
+    setMiUserId(session.user.id);
+
     try {
       // ── FIX: traemos AMBOS campos de nombre ────────────────────────────
       const { data, error } = await supabase
         .from('Usuarios')
         .select('nombre, usuario_empresa, avatar_url, reputacion, trabajos, radio_alcance_km, zona_residencial')
-        .eq('id', session.user.id)
+        .eq('id', idACargar)
         .single();
 
       if (error) throw error;
@@ -254,12 +261,14 @@ export default function PerfilScreen() {
         <View style={styles.profileCard}>
           <View style={styles.avatarWrapper}>
             <Image source={{ uri: fotoPerfil }} style={styles.mainAvatar} />
-            <TouchableOpacity style={styles.cameraIcon} onPress={cambiarFotoPerfil} disabled={loading}>
-              {loading
-                ? <ActivityIndicator size="small" color="#FFF" />
-                : <Camera size={18} color="#FFF" />
-              }
-            </TouchableOpacity>
+            {esMiPerfil && (
+              <TouchableOpacity style={styles.cameraIcon} onPress={cambiarFotoPerfil} disabled={loading}>
+                {loading
+                  ? <ActivityIndicator size="small" color="#FFF" />
+                  : <Camera size={18} color="#FFF" />
+                }
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.nameSection}>
@@ -322,7 +331,7 @@ export default function PerfilScreen() {
           </View>
         </View>
 
-        {!perfilInfo.verificado && (
+        {esMiPerfil && !perfilInfo.verificado && (
           <View style={styles.warningContainer}>
             <View style={styles.warningCard}>
               <ShieldAlert size={20} color={BRAND.danger} />
@@ -340,15 +349,26 @@ export default function PerfilScreen() {
             <Text style={styles.bioText}>{perfilInfo.bio}</Text>
           </View>
 
-          <TouchableOpacity style={styles.editBtn} onPress={() => setModalVisible(true)} disabled={loading}>
-            <Edit3 size={18} color={BRAND.primary} />
-            <Text style={styles.editBtnText}>Editar Perfil</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <LogOut size={16} color={NEUTRAL.gray} />
-            <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
-          </TouchableOpacity>
+          {esMiPerfil ? (
+            <>
+              <TouchableOpacity style={styles.editBtn} onPress={() => setModalVisible(true)} disabled={loading}>
+                <Edit3 size={18} color={BRAND.primary} />
+                <Text style={styles.editBtnText}>Editar Perfil</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                <LogOut size={16} color={NEUTRAL.gray} />
+                <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={styles.contactarBtn}
+              onPress={() => router.back()}
+            >
+              <UserCheck size={18} color={NEUTRAL.white} />
+              <Text style={styles.contactarBtnText}>Volver</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={{ height: 40 }} />
@@ -410,4 +430,6 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: NEUTRAL.gray, fontWeight: '600' },
   saveBtn: { backgroundColor: BRAND.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
   saveBtnText: { color: '#FFF', fontWeight: '700' },
+  contactarBtn: { marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 16, borderRadius: 16, backgroundColor: BRAND.primary },
+  contactarBtnText: { color: NEUTRAL.white, fontWeight: '700', fontSize: 16 },
 });
